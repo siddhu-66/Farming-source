@@ -1,0 +1,16 @@
+{
+  "nav.about": "About",
+  "nav.contact": "Contact",
+  "nav.features": "Features",
+  "nav.signIn": "Sign In",
+  "nav.getStarted": "Get Started",
+  "nav.dashboard": "Dashboard",
+  
+  "home.hero.title": "From Seed to Sale — Reimagined",
+  "home.hero.description": "Empowering farmers with AI-driven insights, direct market access, and comprehensive agricultural support.",
+  
+  "auth.login.title": "Welcome Back",
+  "auth.register.title": "Join AgriAssist",
+  
+  "ai.assistant.placeholder": "Ask anything about farming..."
+}

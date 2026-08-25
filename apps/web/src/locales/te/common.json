@@ -1,0 +1,16 @@
+{
+  "nav.about": "గురించి",
+  "nav.contact": "సంప్రదించండి",
+  "nav.features": "లక్షణాలు",
+  "nav.signIn": "సైన్ ఇన్",
+  "nav.getStarted": "ప్రారంభించండి",
+  "nav.dashboard": "డాష్‌బోర్డ్",
+  
+  "home.hero.title": "విత్తనం నుండి అమ్మకం వరకు — పునరాలోచన",
+  "home.hero.description": "AI ఆధారిత అంతర్దృష్టులు, ప్రత్యక్ష మార్కెట్ యాక్సెస్ మరియు సమగ్ర వ్యవసాయ మద్దతుతో రైతులను శక్తివంతం చేయడం.",
+  
+  "auth.login.title": "తిరిగి స్వాగతం",
+  "auth.register.title": "AgriAssist లో చేరండి",
+  
+  "ai.assistant.placeholder": "వ్యవసాయం గురించి ఏదైనా అడగండి..."
+}
