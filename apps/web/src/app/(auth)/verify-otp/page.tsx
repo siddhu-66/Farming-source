@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { OTPInput } from '@/components/auth/OTPInput';
 import { useRegistrationStore } from '@/stores/registrationStore';
 import api from '@/lib/api';
-import { ArrowLeft, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, CircleCheck as CheckCircle2, CircleAlert as AlertCircle } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 
 export default function VerifyOTPPage() {
@@ -46,8 +46,8 @@ export default function VerifyOTPPage() {
     setErrorMessage('');
 
     try {
-      const response = await api.post('/v1/auth/verify-otp', {
-        mobile: mobile,
+      const response = await api.post('/auth/verify-otp', {
+        phone: mobile,
         otp: otpValue
       });
 
@@ -56,7 +56,8 @@ export default function VerifyOTPPage() {
         // Save token to auth store
         setAuth(
           response.data.data.user,
-          response.data.data.accessToken
+          response.data.data.accessToken,
+          response.data.data.refreshToken
         );
 
         // Redirect based on onboarding status
@@ -79,7 +80,7 @@ export default function VerifyOTPPage() {
 
   const handleResend = async () => {
     try {
-      await api.post('/v1/auth/otp/resend', { mobile });
+      await api.post('/auth/resend-otp', { phone: mobile });
       setTimeLeft(60);
       setIsError(false);
       setErrorMessage('');

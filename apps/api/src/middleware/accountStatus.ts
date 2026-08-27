@@ -11,7 +11,7 @@ export const accountStatus = async (req: AuthRequest, res: Response, next: NextF
 
     const { data: user } = await supabase
       .from('users')
-      .select('status, is_verified, is_deleted')
+      .select('status, is_deleted')
       .eq('id', req.user.id)
       .maybeSingle();
 
@@ -23,11 +23,11 @@ export const accountStatus = async (req: AuthRequest, res: Response, next: NextF
       return next(createApiError(403, 'User account has been deleted'));
     }
 
-    if (user.status === 'suspended') {
+    if (user.status === 'SUSPENDED') {
       return next(createApiError(403, 'User account is suspended'));
     }
 
-    if (user.status !== 'active') {
+    if (user.status !== 'ACTIVE') {
       return next(createApiError(403, `User account is ${user.status}`));
     }
 

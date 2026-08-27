@@ -11,7 +11,7 @@ export const validateSession = async (req: AuthRequest, res: Response, next: Nex
 
     const { data: session } = await supabase
       .from('sessions')
-      .select('status, expires_at')
+      .select('session_status, expires_at')
       .eq('id', req.user.sessionId)
       .maybeSingle();
 
@@ -19,8 +19,8 @@ export const validateSession = async (req: AuthRequest, res: Response, next: Nex
       return next(createApiError(401, 'Invalid session'));
     }
 
-    if (session.status !== 'active') {
-      return next(createApiError(401, `Session is ${session.status}. Please log in again.`));
+    if (session.session_status !== 'ACTIVE') {
+      return next(createApiError(401, `Session is ${session.session_status}. Please log in again.`));
     }
 
     if (new Date(session.expires_at) < new Date()) {

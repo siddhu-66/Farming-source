@@ -11,10 +11,10 @@ import securityService from './security.service';
 import { sendSMS } from './sms';
 import { logger } from '../config/logger';
 
-const generateAccessToken = (user: any): string => {
+const generateAccessToken = (user: any, sessionId?: string, deviceId?: string): string => {
   const secret = process.env.JWT_SECRET!;
   return jwt.sign(
-    { userId: user.id.toString(), role: user.role, email: user.email },
+    { userId: user.id.toString(), role: user.role, email: user.email, sessionId, deviceId },
     secret,
     { expiresIn: (process.env.JWT_EXPIRES_IN || '15m') as any }
   );
@@ -130,7 +130,7 @@ export const registerUser = async (data: any, requestMeta: any = {}) => {
   };
   
   const user = await authRepo.createUser(insertData);
-  // Optional: await authRepo.createRoleProfile(data.role, user.id);
+  await authRepo.createRoleProfile(data.role, user.id);
 
   if (user.email) {
     // Send email verification
@@ -169,8 +169,6 @@ export const registerUser = async (data: any, requestMeta: any = {}) => {
     logger.warn('Failed to send OTP SMS:', err);
   }
 
-  const accessToken = generateAccessToken(user);
-
   // Fingerprinting & Device Registration
   const fingerprintRaw = `${requestMeta.browser || 'Unknown'}|${requestMeta.operatingSystem || 'Unknown'}|${requestMeta.platform || 'Unknown'}|${requestMeta.screenResolution || 'Unknown'}|${requestMeta.timezone || 'Unknown'}|${requestMeta.language || 'Unknown'}|${requestMeta.userAgent || 'Unknown'}|${requestMeta.deviceType || 'Unknown'}`;
   const deviceFingerprint = crypto.createHash('sha256').update(fingerprintRaw).digest('hex');
@@ -194,6 +192,8 @@ export const registerUser = async (data: any, requestMeta: any = {}) => {
     ...requestMeta
   });
   await authRepo.linkRefreshTokenToSession(sessionRecord.id, rft.record.id);
+  
+  const accessToken = generateAccessToken(user, sessionRecord.id, device.id);
   
   // Update device login
   await trustedDevicesRepo.updateDeviceLogin(device.id, true, sessionRecord.id, rft.record.id);
@@ -287,8 +287,6 @@ export const loginUser = async (data: any, requestMeta: any = {}) => {
        
     });
 
-    const accessToken = generateAccessToken(user);
-    
     // Fingerprinting & Device Registration
     const fingerprintRaw = `${requestMeta.browser || 'Unknown'}|${requestMeta.operatingSystem || 'Unknown'}|${requestMeta.platform || 'Unknown'}|${requestMeta.screenResolution || 'Unknown'}|${requestMeta.timezone || 'Unknown'}|${requestMeta.language || 'Unknown'}|${requestMeta.userAgent || 'Unknown'}|${requestMeta.deviceType || 'Unknown'}`;
     const deviceFingerprint = crypto.createHash('sha256').update(fingerprintRaw).digest('hex');
@@ -312,6 +310,8 @@ export const loginUser = async (data: any, requestMeta: any = {}) => {
       ...requestMeta
     });
     await authRepo.linkRefreshTokenToSession(sessionRecord.id, rft.record.id);
+
+    const accessToken = generateAccessToken(user, sessionRecord.id, device.id);
 
     // Update device login
     await trustedDevicesRepo.updateDeviceLogin(device.id, true, sessionRecord.id, rft.record.id);
@@ -366,7 +366,7 @@ export const refreshTokens = async (refreshToken: string, requestMeta: any = {})
   const user = await authRepo.getUserById(userId);
   if (!user) throw new NotFoundError('User not found');
 
-  const accessToken = generateAccessToken(user);
+  const accessToken = generateAccessToken(user, newTokenRecord.record.session_id, newTokenRecord.record.device_id);
   const newRefreshToken = jwt.sign(
     { userId: user.id, jti: newTokenRecord.jwtId, raw: newTokenRecord.rawToken },
     secret,
@@ -407,7 +407,6 @@ export const verifyOTP = async (mobile: string, otp: string, type: string, reque
   await authRepo.markOtpUsed(otpRecord.id);
   await authRepo.updateUser(user.id, { is_mobile_verified: true, status: 'ACTIVE' });
 
-  const accessToken = generateAccessToken(user);
   // Fingerprinting & Device Registration
   const fingerprintRaw = `${requestMeta.browser || 'Unknown'}|${requestMeta.operatingSystem || 'Unknown'}|${requestMeta.platform || 'Unknown'}|${requestMeta.screenResolution || 'Unknown'}|${requestMeta.timezone || 'Unknown'}|${requestMeta.language || 'Unknown'}|${requestMeta.userAgent || 'Unknown'}|${requestMeta.deviceType || 'Unknown'}`;
   const deviceFingerprint = crypto.createHash('sha256').update(fingerprintRaw).digest('hex');
@@ -425,6 +424,8 @@ export const verifyOTP = async (mobile: string, otp: string, type: string, reque
     sessionId: sessionRecord.id
   });
   await authRepo.linkRefreshTokenToSession(sessionRecord.id, rft.record.id);
+
+  const accessToken = generateAccessToken(user, sessionRecord.id, device.id);
 
   // Update device activity/login
   await trustedDevicesRepo.updateDeviceLogin(device.id, true, sessionRecord.id, rft.record.id);
@@ -482,14 +483,20 @@ export const resetPassword = async (userId: string, token: string, newPassword: 
 };
 
 export const logoutUser = async (userId: string, refreshToken: string) => {
-  const rftRecord = await supabase.from('refresh_tokens').select('*').eq('token', refreshToken).eq('user_id', userId).single();
-  
-  if (rftRecord.data) {
-    await require('../repositories/refresh_tokens.repository').default.revokeToken(rftRecord.data.id, 'USER_LOGOUT');
-    if (rftRecord.data.session_id) {
-      await authRepo.terminateSession(rftRecord.data.session_id, userId, 'USER_LOGOUT');
-      await loginHistoryRepo.updateLogoutTime(rftRecord.data.session_id);
-    }
+  let decoded: any;
+  try {
+    decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!);
+  } catch {
+    return;
+  }
+  const { jti } = decoded;
+  if (!jti) return;
+
+  await require('../repositories/refresh_tokens.repository').default.revokeToken(jti, 'USER_LOGOUT');
+  const { data: rftRecord } = await supabase.from('refresh_tokens').select('session_id').eq('jwt_id', jti).maybeSingle();
+  if (rftRecord?.session_id) {
+    await authRepo.terminateSession(rftRecord.session_id, userId, 'USER_LOGOUT');
+    await loginHistoryRepo.updateLogoutTime(rftRecord.session_id);
   }
 };
 

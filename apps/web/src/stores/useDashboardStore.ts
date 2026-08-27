@@ -45,7 +45,8 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   initialize: async (token: string) => {
     set({ isInitializing: true, error: null });
     try {
-      const response = await fetch('http://localhost:5000/api/v1/dashboard/bootstrap', {
+      const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1';
+      const response = await fetch(`${baseURL}/dashboard/bootstrap`, {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${token}`,

@@ -24,7 +24,7 @@ export default function LoginPage() {
     try {
       const res = await api.post('/auth/login', { email, password, role: role.toUpperCase() });
       if (res.data.success) {
-        setAuth(res.data.data.user, res.data.data.accessToken);
+        setAuth(res.data.data.user, res.data.data.accessToken, res.data.data.refreshToken);
         toast.success('Login successful');
         router.push(`/${role}/dashboard`);
       }

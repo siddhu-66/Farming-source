@@ -59,10 +59,29 @@ export class AuthRepository {
       farmer: 'farmers',
       buyer: 'buyers',
       transport: 'transporters',
-      industry: 'industries'
+      industry: 'industries',
+      admin: 'admin_profiles'
     };
-    const table = tableMap[role];
-    if (table) {
+    const table = tableMap[role.toLowerCase()];
+    if (!table) return;
+
+    const { data: existing } = await supabase.from(table as any)
+      .select('id')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (existing) return;
+
+    if (table === 'admin_profiles') {
+      const user = await this.getUserById(userId);
+      const { error } = await supabase.from(table as any).insert([{
+        user_id: userId,
+        full_name: user?.full_name || 'Admin',
+        designation: 'ADMIN',
+        official_email: user?.email || '',
+        mobile_number: user?.phone || ''
+      }]);
+      if (error) throw new DatabaseError(error.message);
+    } else {
       const { error } = await supabase.from(table as any).insert([{ user_id: userId }]);
       if (error) throw new DatabaseError(error.message);
     }

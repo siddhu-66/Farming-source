@@ -4,34 +4,21 @@ import React, { useEffect } from 'react';
 import { useDashboardStore } from '../../stores/useDashboardStore';
 import { UniversalLoader } from './UniversalLoader';
 import { useSocket } from '../../hooks/useSocket';
-
-const getToken = () => {
-  if (typeof window === 'undefined') return null;
-  // Try local storage first
-  const localToken = localStorage.getItem('token');
-  if (localToken) return localToken;
-  
-  // Fallback to cookie
-  const match = document.cookie.match(new RegExp('(^| )token=([^;]+)'));
-  if (match) return match[2];
-  
-  return null;
-};
+import { useAuthStore } from '../../stores/authStore';
 
 export const DashboardWrapper = ({ children }: { children: React.ReactNode }) => {
   const { isReady, initialize, error } = useDashboardStore();
-  
-  // Initialize Socket.IO once dashboard is ready
+  const token = useAuthStore((state) => state.token);
+
   useSocket();
 
   useEffect(() => {
-    const token = getToken();
     if (token) {
       initialize(token);
     } else {
       initialize('');
     }
-  }, [initialize]);
+  }, [initialize, token]);
 
   if (error) {
     return (

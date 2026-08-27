@@ -14,18 +14,18 @@ export const validateRefreshToken = async (req: Request, res: Response, next: Ne
     const { data: tokenRecord } = await supabase
       .from('refresh_tokens')
       .select('*')
-      .eq('token', refreshToken)
+      .eq('jwt_id', refreshToken)
       .maybeSingle();
 
     if (!tokenRecord) {
       return next(createApiError(401, 'Invalid refresh token'));
     }
 
-    if (tokenRecord.status !== 'active') {
-      return next(createApiError(401, `Refresh token is ${tokenRecord.status}`));
+    if (tokenRecord.is_revoked) {
+      return next(createApiError(401, `Refresh token is revoked`));
     }
 
-    if (new Date(tokenRecord.expires_at) < new Date()) {
+    if (tokenRecord.is_expired || new Date(tokenRecord.expires_at) < new Date()) {
       return next(createApiError(401, 'Refresh token expired'));
     }
 
