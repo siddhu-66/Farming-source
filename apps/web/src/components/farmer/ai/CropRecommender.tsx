@@ -28,7 +28,7 @@ export function CropRecommender() {
     
     try {
       setLoading(true);
-      const res = await api.post('/api/ai/crop-recommend', formData);
+      const res = await api.post('/ai/crop-recommend', formData);
       if (res.data.success) {
         setRecommendations(res.data.data.recommendations || []);
         toast.success('Recommendations generated');

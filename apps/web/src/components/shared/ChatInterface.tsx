@@ -46,7 +46,7 @@ export function ChatInterface({ recipientName = "AgriAssist AI", showFileUpload 
         parts: [{ text: m.text }]
       }));
 
-      const { data } = await api.post('/api/ai/chat', { 
+      const { data } = await api.post('/ai/chat', {
         message: userMessage, 
         history 
       });

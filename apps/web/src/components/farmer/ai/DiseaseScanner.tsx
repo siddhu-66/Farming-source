@@ -34,7 +34,7 @@ export function DiseaseScanner() {
     if (!selectedImage) return;
     try {
       setLoading(true);
-      const res = await api.post('/api/ai/disease-detect', {
+      const res = await api.post('/ai/disease-detect', {
         imageBase64: selectedImage,
         cropName: cropName || 'Unknown Crop',
       });

@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 export function MarketPricesWidget() {
   const [data, setData] = useState<any[] | null>(null);
   useEffect(() => {
-    api.get('/api/farmer/market-prices').then(res => setData(res.data.data)).catch(() => setData([]));
+    api.get('/farmer/market-prices').then(res => setData(res.data.data)).catch(() => setData([]));
   }, []);
 
   if (!data) return <Skeleton className="h-64 w-full" />;

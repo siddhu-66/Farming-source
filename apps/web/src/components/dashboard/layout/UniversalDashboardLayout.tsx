@@ -8,9 +8,11 @@ import { MessageDrawer } from "../drawers/MessageDrawer";
 import { AiAssistantDrawer } from "../drawers/AiAssistantDrawer";
 import { DashboardWrapper } from "../DashboardWrapper";
 import { useUiStore } from "@/stores/uiStore";
+import { useSocket } from "@/hooks/useSocket";
 
 export function UniversalDashboardLayout({ children }: { children: ReactNode }) {
   const { sidebarExpanded } = useUiStore();
+  useSocket();
 
   return (
     <DashboardWrapper>

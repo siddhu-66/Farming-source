@@ -17,7 +17,7 @@ export default function FarmerOffersPage() {
   const fetchOffers = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/api/farmer/offers');
+      const response = await api.get('/farmer/offers');
       if (response.data.success) {
         setOffers(response.data.data.offers || []);
       } else {
@@ -38,7 +38,7 @@ export default function FarmerOffersPage() {
   const handleAction = async (id: string, action: 'accept' | 'reject' | 'counter') => {
     try {
       const payload = action === 'counter' ? { counterPrice: 100, counterMessage: 'Mock counter message' } : undefined;
-      const res = await api.patch(`/api/farmer/offers/${id}/${action}`, payload);
+      const res = await api.patch(`/farmer/offers/${id}/${action}`, payload);
       
       if (res.data.success) {
         toast.success(`Offer ${action}ed successfully`);

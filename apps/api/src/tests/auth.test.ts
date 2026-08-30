@@ -24,6 +24,24 @@ jest.mock('../services/sms', () => ({
   sendSMS: jest.fn().mockResolvedValue(true)
 }));
 
+jest.mock('../services/twilio_verify.service', () => ({
+  twilioVerifyService: {
+    startVerification: jest.fn().mockResolvedValue({
+      sid: 'VA1234567890abcdef',
+      status: 'pending',
+      to: '+919876543210',
+      channel: 'sms',
+      valid: false
+    }),
+    checkVerification: jest.fn().mockResolvedValue({
+      sid: 'VA1234567890abcdef',
+      status: 'approved',
+      to: '+919876543210',
+      valid: true
+    })
+  }
+}));
+
 jest.mock('../repositories/login_history.repository', () => ({
   __esModule: true,
   default: {
@@ -81,8 +99,9 @@ describe('Authentication API (Section 14)', () => {
       (AuthRepository.createUser as jest.Mock).mockResolvedValue({
         id: '123',
         email: 'test@example.com',
-        phone: '1234567890',
-        role: 'FARMER'
+        phone: '+919876543210',
+        role: 'FARMER',
+        full_name: 'John Doe'
       });
       (AuthRepository.createRoleProfile as jest.Mock).mockResolvedValue(undefined);
       (AuthRepository.insertOtp as jest.Mock).mockResolvedValue(undefined);
@@ -92,11 +111,20 @@ describe('Authentication API (Section 14)', () => {
         .post('/api/v1/auth/register')
         .send({
           role: 'FARMER',
-          firstName: 'John',
-          lastName: 'Doe',
-          email: 'test@example.com',
-          phone: '1234567890',
-          password: 'Password@123'
+          personalInfo: {
+            firstName: 'John',
+            lastName: 'Doe',
+            email: 'test@example.com',
+            phone: '9876543210',
+            country: 'India',
+            state: 'Maharashtra',
+            district: 'Pune',
+            villageCity: 'Pune'
+          },
+          account: {
+            username: 'johndoe',
+            password: 'Password@123'
+          }
         });
 
       console.log('REG-001 res:', res.body);

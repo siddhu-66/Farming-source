@@ -30,7 +30,7 @@ export default function WarehouseDashboard() {
   const fetchInventory = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/api/farmer/warehouse/inventory');
+      const res = await api.get('/farmer/warehouse/inventory');
       if (res.data?.success) {
         setInventory(res.data.data.inventory);
       }
@@ -43,7 +43,7 @@ export default function WarehouseDashboard() {
 
   const handleBook = async () => {
     try {
-      const res = await api.post('/api/farmer/warehouse/book', {
+      const res = await api.post('/farmer/warehouse/book', {
         ...bookingForm,
         expectedWeight: Number(bookingForm.expectedWeight),
         durationDays: Number(bookingForm.durationDays)

@@ -40,7 +40,7 @@ export default function VoiceAssistant() {
     setProcessing(true);
     setTranscript(finalTranscript || "Processing your voice...");
     try {
-      const res = await api.post('/api/v1/ai/voice', { transcript: finalTranscript || "Hello" });
+      const res = await api.post('/ai/voice', { transcript: finalTranscript || "Hello" });
       if (res.data?.success) {
         setAiResponse(res.data.data.response);
         simulateTTS(res.data.data.response);

@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/Button';
 export function AiRecommendationWidget() {
   const [data, setData] = useState<any>(null);
   useEffect(() => {
-    api.post('/api/farmer/ml/dashboard-recommendations').then(res => setData(res.data.data)).catch(() => setData({}));
+    api.post('/farmer/ml/dashboard-recommendations').then(res => setData(res.data.data)).catch(() => setData({}));
   }, []);
 
   if (!data) return <Skeleton className="h-64 w-full" />;

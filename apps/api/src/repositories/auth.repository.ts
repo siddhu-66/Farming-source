@@ -6,9 +6,10 @@ import crypto from 'crypto';
 
 export class AuthRepository {
   async getUserByEmail(email: string) {
+    if (!email) return null;
     const { data, error } = await supabase.from('users')
       .select('*')
-      .eq('email', email.toLowerCase())
+      .eq('email', email.toLowerCase().trim())
       .eq('is_deleted', false)
       .limit(1)
       .maybeSingle();
@@ -17,11 +18,59 @@ export class AuthRepository {
   }
 
   async getUserByPhone(phone: string, role?: string) {
-    let query = supabase.from('users').select('*').eq('phone', phone).eq('is_deleted', false);
-    if (role) query = query.eq('role', role);
-    const { data, error } = await query.limit(1).maybeSingle();
-    if (error) throw new DatabaseError(error.message);
-    return data;
+    if (!phone) return null;
+    const cleanPhone = phone.trim();
+    const digitsOnly = cleanPhone.replace(/\D/g, '');
+    const tenDigit = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : digitsOnly;
+    const withPlus91 = `+91${tenDigit}`;
+    const withPlus = `+${digitsOnly}`;
+
+    let exactQuery = supabase.from('users').select('*').eq('is_deleted', false);
+    if (role) exactQuery = exactQuery.eq('role', role);
+
+    const { data: exactMatch } = await exactQuery.eq('phone', cleanPhone).limit(1).maybeSingle();
+    if (exactMatch) return exactMatch;
+
+    if (withPlus91 !== cleanPhone) {
+      let q1 = supabase.from('users').select('*').eq('phone', withPlus91).eq('is_deleted', false);
+      if (role) q1 = q1.eq('role', role);
+      const { data: match1 } = await q1.limit(1).maybeSingle();
+      if (match1) return match1;
+    }
+
+    if (withPlus !== cleanPhone && withPlus !== withPlus91) {
+      let qPlus = supabase.from('users').select('*').eq('phone', withPlus).eq('is_deleted', false);
+      if (role) qPlus = qPlus.eq('role', role);
+      const { data: matchPlus } = await qPlus.limit(1).maybeSingle();
+      if (matchPlus) return matchPlus;
+    }
+
+    if (tenDigit !== cleanPhone && tenDigit !== withPlus91) {
+      let q2 = supabase.from('users').select('*').eq('phone', tenDigit).eq('is_deleted', false);
+      if (role) q2 = q2.eq('role', role);
+      const { data: match2 } = await q2.limit(1).maybeSingle();
+      if (match2) return match2;
+    }
+
+    return null;
+  }
+
+  async deleteUserById(id: string) {
+    try {
+      await supabase.from('otp_requests').delete().eq('user_id', id);
+      await supabase.from('sessions').delete().eq('user_id', id);
+      await supabase.from('farmers').delete().eq('user_id', id);
+      await supabase.from('buyers').delete().eq('user_id', id);
+      await supabase.from('transporters').delete().eq('user_id', id);
+      await supabase.from('industries').delete().eq('user_id', id);
+      await supabase.from('admin_profiles').delete().eq('user_id', id);
+      const { error } = await supabase.from('users').delete().eq('id', id);
+      if (error) {
+        logger.warn(`Failed to hard delete user ${id}: ${error.message}`);
+      }
+    } catch (e) {
+      logger.warn(`deleteUserById error:`, e);
+    }
   }
 
   async getUserById(id: string) {

@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 export function WalletSummaryWidget() {
   const [data, setData] = useState<any>(null);
   useEffect(() => {
-    api.get('/api/farmer/wallet/summary').then(res => setData(res.data.data)).catch(() => setData({}));
+    api.get('/farmer/wallet/summary').then(res => setData(res.data.data)).catch(() => setData({}));
   }, []);
 
   if (!data) return <Skeleton className="h-48 w-full" />;

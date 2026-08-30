@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/Badge';
 export function RecentOrdersWidget() {
   const [data, setData] = useState<any[] | null>(null);
   useEffect(() => {
-    api.get('/api/farmer/orders/recent').then(res => setData(res.data.data)).catch(() => setData([]));
+    api.get('/farmer/orders/recent').then(res => setData(res.data.data)).catch(() => setData([]));
   }, []);
 
   if (!data) return <Skeleton className="h-64 w-full" />;

@@ -25,7 +25,7 @@ export function FertilizerAdvisor() {
     
     try {
       setLoading(true);
-      const res = await api.post('/api/ai/fertilizer-recommend', formData);
+      const res = await api.post('/ai/fertilizer-recommend', formData);
       if (res.data.success) {
         setAdvice(res.data.data.advice);
         toast.success('Advice generated');

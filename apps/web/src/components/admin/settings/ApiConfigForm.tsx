@@ -18,7 +18,7 @@ export default function ApiConfigForm({ initialData }: { initialData: any }) {
   const handleSave = async () => {
     try {
       setLoading(true);
-      await api.patch('/api/admin/settings/apiConfig', formData);
+      await api.patch('/admin/settings/apiConfig', formData);
       toast.success('API Configurations saved successfully!');
     } catch (e) {
       toast.error('Failed to save API configuration');

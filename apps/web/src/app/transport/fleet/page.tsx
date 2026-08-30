@@ -20,9 +20,9 @@ export default function FleetManagement() {
       try {
         setLoading(true);
         const [vehiclesRes, driversRes, maintRes] = await Promise.all([
-          api.get('/api/transport/dashboard'), // Has vehicles
-          api.get('/api/transport/drivers'),
-          api.get('/api/transport/fleet/maintenance')
+          api.get('/transport/dashboard'), // Has vehicles
+          api.get('/transport/drivers'),
+          api.get('/transport/fleet/maintenance')
         ]);
         
         setData({

@@ -34,13 +34,14 @@ export function PersonalInfo({ onNext }: { onNext: () => void }) {
     // API Validation
     setLoading(true);
     try {
-      const { data: result } = await api.post('/v1/auth/check-user', { 
-        email: info.email, 
-        phone: info.phone 
+      const { data: result } = await api.post('/v1/auth/check-user', {
+        email: info.email,
+        phone: info.phone
       });
-      
-      if (!result.emailAvailable || !result.phoneAvailable) {
-        toast.error('Email or mobile number is already in use');
+
+      if (result.emailAvailable === false || result.phoneAvailable === false || result.available === false) {
+        const errorMsg = result.message || result.emailMessage || result.phoneMessage || 'Email or mobile number is already registered. Please log in instead.';
+        toast.error(errorMsg);
       } else {
         onNext();
       }

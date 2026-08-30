@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { supabase } from '../config/supabase';
 import { authenticate, AuthRequest } from '../middleware';
+import { getGeminiModel } from '../services/gemini.service';
+import axios from 'axios';
 
 const router = Router();
 router.use(authenticate);
@@ -285,29 +287,132 @@ router.post('/:id/activities', async (req: AuthRequest, res: Response): Promise<
   }
 });
 
-// POST /api/v1/farmer/crops/:id/photos - Upload photo (mock analysis)
+// POST /api/v1/farmer/crops/:id/photos - Upload photo with real Gemini AI analysis
 router.post('/:id/photos', async (req: AuthRequest, res: Response): Promise<any> => {
   try {
     const farmerId = await getFarmerId(req.user!.id);
     const { id } = req.params;
-    
-    const { data: cropCheck } = await supabase.from('crops').select('id').eq('id', id).eq('farmer_id', farmerId).single();
+
+    const { data: cropCheck } = await supabase.from('crops').select('id, crop_name').eq('id', id).eq('farmer_id', farmerId).single();
     if (!cropCheck) return res.status(403).json({ success: false, message: "Unauthorized" });
 
     const { imageUrl, imageType } = req.body;
-    
-    // Mock AI Analysis
-    const isDiseased = Math.random() > 0.7; // 30% chance of disease
-    const analysisResult = isDiseased ? {
-      status: "Disease Detected",
-      confidence: 0.89,
-      disease: "Leaf Spot",
-      recommendation: "Apply fungicide within 2 days."
-    } : {
-      status: "Healthy",
-      confidence: 0.95,
-      recommendation: "Continue current irrigation schedule."
-    };
+
+    if (!imageUrl) {
+      return res.status(400).json({ success: false, message: 'Image URL is required' });
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(503).json({
+        success: false,
+        message: 'AI analysis unavailable. Please check your image and try again.'
+      });
+    }
+
+    let base64Image: string;
+    let mimeType = 'image/jpeg';
+
+    if (imageUrl.startsWith('data:')) {
+      const match = imageUrl.match(/^data:(image\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
+      if (!match) {
+        return res.status(422).json({ success: false, message: 'Invalid image data URI' });
+      }
+      mimeType = match[1];
+      base64Image = match[2];
+    } else if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      try {
+        const imageResponse = await axios.get(imageUrl, {
+          responseType: 'arraybuffer',
+          timeout: 10000,
+        });
+
+        const contentType = imageResponse.headers['content-type'] ? String(imageResponse.headers['content-type']) : '';
+        if (contentType && contentType.startsWith('image/')) {
+          mimeType = contentType.split(';')[0];
+        } else if (imageUrl.toLowerCase().endsWith('.png')) {
+          mimeType = 'image/png';
+        } else if (imageUrl.toLowerCase().endsWith('.webp')) {
+          mimeType = 'image/webp';
+        }
+
+        base64Image = Buffer.from(imageResponse.data).toString('base64');
+      } catch (imgErr) {
+        return res.status(422).json({
+          success: false,
+          message: 'Invalid image. Unable to fetch image from URL.'
+        });
+      }
+    } else {
+      return res.status(422).json({
+        success: false,
+        message: 'Invalid image URL format.'
+      });
+    }
+
+    let analysisResult: any = null;
+
+    try {
+      const model = getGeminiModel(process.env.AI_MODEL || 'gemini-1.5-flash');
+      const prompt = `Analyze this agricultural crop image. Identify: 1) crop health status (Healthy/Disease Detected/Pest Infestation/Nutrient Deficiency), 2) specific disease/issue name if detected, 3) confidence score 0-1, 4) visible symptoms, 5) recommended treatment, 6) prevention measures. Respond in JSON format: { status, disease, confidence, symptoms, recommendation, prevention }`;
+
+      const imagePart = {
+        inlineData: {
+          data: base64Image,
+          mimeType,
+        },
+      };
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => {
+          const timeoutErr: any = new Error('AI analysis timed out');
+          timeoutErr.status = 503;
+          reject(timeoutErr);
+        }, 30000)
+      );
+
+      const analysisPromise = model.generateContent([prompt, imagePart]);
+      const result = (await Promise.race([analysisPromise, timeoutPromise])) as any;
+      const responseText = result.response.text();
+
+      try {
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          analysisResult = JSON.parse(jsonMatch[0]);
+        } else {
+          analysisResult = {
+            status: "Analysis Completed",
+            disease: "Unable to parse specific disease",
+            confidence: 0.5,
+            symptoms: responseText.substring(0, 200),
+            recommendation: "Please consult with an agricultural expert",
+            prevention: "Follow standard crop management practices"
+          };
+        }
+      } catch (parseError) {
+        analysisResult = {
+          status: "Analysis Completed",
+          disease: "Parsing error",
+          confidence: 0.5,
+          symptoms: responseText.substring(0, 200),
+          recommendation: "Please consult with an agricultural expert",
+          prevention: "Follow standard crop management practices"
+        };
+      }
+    } catch (aiError: any) {
+      console.error('Gemini AI Error:', aiError);
+
+      if (aiError.message === 'AI analysis timed out' || aiError.status === 503) {
+        return res.status(503).json({
+          success: false,
+          message: 'AI analysis timed out. Please try again.'
+        });
+      }
+
+      return res.status(503).json({
+        success: false,
+        message: 'AI analysis unavailable. Please check your image and try again.'
+      });
+    }
 
     const { data, error } = await supabase
       .from('crop_images')

@@ -18,7 +18,7 @@ AgriAssist is a comprehensive B2B/B2C SaaS platform designed to unite all stakeh
 * **Monorepo:** Turborepo
 * **Frontend:** Next.js 15 (App Router), React 19, Tailwind CSS 4, Zustand, React Hook Form, Framer Motion
 * **Backend:** Node.js, Express.js, Socket.IO
-* **Database:** MongoDB (Mongoose)
+* **Database:** Supabase (PostgreSQL)
 * **Services:** Google Gemini API, OpenWeather API, Google Maps, Supabase Storage, Twilio, Resend.
 
 ## 📦 Getting Started

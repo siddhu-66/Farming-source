@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Plane, Calendar, Battery, ArrowLeft, Loader2, Image as ImageIcon, Map } from "lucide-react";
+import { Plane, Calendar, Battery, ArrowLeft, Loader2, Image as ImageIcon, Map, AlertCircle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useRouter } from "next/navigation";
@@ -12,6 +12,8 @@ import api from "@/lib/api";
 export default function DroneManagement() {
   const router = useRouter();
   const [missions, setMissions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [scheduling, setScheduling] = useState(false);
 
   useEffect(() => {
@@ -20,12 +22,18 @@ export default function DroneManagement() {
 
   const fetchMissions = async () => {
     try {
+      setLoading(true);
+      setError(null);
       const res = await api.get('/api/v1/iot/drone/missions');
       if (res.data?.success) {
-        setMissions(res.data.data.missions);
+        setMissions(res.data.data.missions || []);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to fetch drone missions", err);
+      setError(err.response?.data?.message || "Failed to load missions");
+      toast.error("Failed to fetch drone missions");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -104,7 +112,19 @@ export default function DroneManagement() {
           </h2>
           
           <div className="space-y-4">
-            {missions.length === 0 ? (
+            {loading ? (
+              <div className="flex h-40 items-center justify-center">
+                <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
+              </div>
+            ) : error ? (
+              <Card className="border-red-200 bg-red-50">
+                <CardContent className="p-6 text-center">
+                  <AlertCircle className="w-10 h-10 text-red-500 mx-auto mb-2" />
+                  <p className="text-sm font-bold text-red-800">{error}</p>
+                  <Button onClick={fetchMissions} variant="outline" size="sm" className="mt-3">Retry</Button>
+                </CardContent>
+              </Card>
+            ) : missions.length === 0 ? (
               <Card className="bg-slate-50 border-dashed">
                 <CardContent className="p-10 text-center text-slate-500 font-medium">
                   No drone missions found. Schedule a survey to get started.

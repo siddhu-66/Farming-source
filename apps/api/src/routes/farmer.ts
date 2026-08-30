@@ -1184,6 +1184,210 @@ router.get('/schemes', async (req: AuthRequest, res: Response, next: NextFunctio
   });
 
 // ============================================
+// MISSING ROUTES FOR FRONTEND INTEGRATION
+// ============================================
+
+// GET /api/farmer/market-prices
+router.get('/market-prices', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const farmerId = (req as any).farmerId;
+
+    // Try to get market prices from listings aggregation
+    const { data: listings, error } = await supabase
+      .from('listings')
+      .select('crop_name, price_per_unit, unit, address, created_at')
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (error) throw createApiError(500, error.message);
+
+    // Aggregate prices by crop
+    const priceMap = new Map<string, { prices: number[], unit: string, markets: Set<string>, dates: string[] }>();
+
+    if (listings && listings.length > 0) {
+      listings.forEach(listing => {
+        const cropName = listing.crop_name;
+        if (!priceMap.has(cropName)) {
+          priceMap.set(cropName, { prices: [], unit: listing.unit, markets: new Set(), dates: [] });
+        }
+        const cropData = priceMap.get(cropName)!;
+        cropData.prices.push(listing.price_per_unit);
+        if (listing.address?.district) cropData.markets.add(listing.address.district);
+        cropData.dates.push(listing.created_at);
+      });
+    }
+
+    const marketPrices = Array.from(priceMap.entries()).map(([cropName, data]) => {
+      const prices = data.prices.sort((a, b) => a - b);
+      const minPrice = prices[0];
+      const maxPrice = prices[prices.length - 1];
+      const modalPrice = prices[Math.floor(prices.length / 2)]; // Median as modal
+      const market = Array.from(data.markets)[0] || 'Various';
+      const date = data.dates[0];
+
+      return {
+        cropName,
+        minPrice,
+        maxPrice,
+        modalPrice,
+        unit: data.unit,
+        market,
+        date
+      };
+    });
+
+    res.json({ success: true, data: marketPrices.length > 0 ? marketPrices : [] });
+  } catch (err) { next(err); }
+});
+
+// GET /api/farmer/orders/recent
+router.get('/orders/recent', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const farmerId = (req as any).farmerId;
+
+    const { data: orders, error } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('farmer_id', farmerId)
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    if (error) throw createApiError(500, error.message);
+
+    res.json({
+      success: true,
+      data: {
+        orders: orders ? toCamel(orders) : []
+      }
+    });
+  } catch (err) { next(err); }
+});
+
+// GET /api/farmer/transport/active
+router.get('/transport/active', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const farmerId = (req as any).farmerId;
+
+    const { data: booking, error } = await supabase
+      .from('transport_bookings')
+      .select('*')
+      .eq('farmer_id', farmerId)
+      .in('status', ['assigned', 'in_transit', 'picked_up'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw createApiError(500, error.message);
+
+    res.json({
+      success: true,
+      data: {
+        booking: booking ? toCamel(booking) : null
+      }
+    });
+  } catch (err) { next(err); }
+});
+
+// GET /api/farmer/wallet/summary
+router.get('/wallet/summary', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const farmerId = (req as any).farmerId;
+    const userId = req.user!.id;
+
+    // Try to get wallet data from wallet table
+    const { data: wallet, error: walletErr } = await supabase
+      .from('wallet')
+      .select('balance')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    // If wallet doesn't exist or error, compute from transactions
+    let balance = 0;
+    let pendingCredits = 0;
+    let pendingDebits = 0;
+
+    if (wallet && !walletErr) {
+      balance = wallet.balance || 0;
+    }
+
+    // Try to get pending transactions
+    const { data: transactions, error: txErr } = await supabase
+      .from('transactions')
+      .select('amount, type, status')
+      .eq('user_id', userId)
+      .eq('status', 'pending');
+
+    if (!txErr && transactions) {
+      transactions.forEach(tx => {
+        if (tx.type === 'credit') {
+          pendingCredits += tx.amount || 0;
+        } else if (tx.type === 'debit') {
+          pendingDebits += tx.amount || 0;
+        }
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        balance,
+        pendingCredits,
+        pendingDebits,
+        currency: 'INR'
+      }
+    });
+  } catch (err) { next(err); }
+});
+
+// GET /api/farmer/crops/health
+router.get('/crops/health', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const farmerId = (req as any).farmerId;
+
+    const { data: crops, error } = await supabase
+      .from('crops')
+      .select('health_score, status')
+      .eq('farmer_id', farmerId);
+
+    if (error) throw createApiError(500, error.message);
+
+    let avgHealth = 0;
+    let totalCrops = 0;
+    let healthyCrops = 0;
+    let riskyCrops = 0;
+
+    if (crops && crops.length > 0) {
+      totalCrops = crops.length;
+      let totalHealthScore = 0;
+
+      crops.forEach(crop => {
+        const healthScore = crop.health_score || 0;
+        totalHealthScore += healthScore;
+
+        if (healthScore >= 70) {
+          healthyCrops++;
+        } else if (healthScore < 50) {
+          riskyCrops++;
+        }
+      });
+
+      avgHealth = totalCrops > 0 ? Math.round(totalHealthScore / totalCrops) : 0;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        avgHealth,
+        totalCrops,
+        healthyCrops,
+        riskyCrops
+      }
+    });
+  } catch (err) { next(err); }
+});
+
+// ============================================
 // WAREHOUSE & COLD STORAGE (PART 2)
 // ============================================
 

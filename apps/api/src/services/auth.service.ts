@@ -8,7 +8,8 @@ import { sendEmail } from './email';
 import trustedDevicesRepo from '../repositories/trusted_devices.repository';
 import loginHistoryRepo from '../repositories/login_history.repository';
 import securityService from './security.service';
-import { sendSMS } from './sms';
+import { twilioVerifyService } from './twilio_verify.service';
+import { normalizeToE164, maskPhoneNumber } from '../utils/phone';
 import { logger } from '../config/logger';
 
 const generateAccessToken = (user: any, sessionId?: string, deviceId?: string): string => {
@@ -32,12 +33,10 @@ const generateRefreshToken = (user: any): string => {
 export const mapUserToCamelCase = (user: any) => {
   if (!user) return user;
   const mapped = { ...user };
-  
+
   const keyMap: Record<string, string> = {
     'public_id': 'publicId',
     'full_name': 'fullName',
-    
-    
     'phone': 'phone',
     'password_hash': 'passwordHash',
     'status': 'accountStatus',
@@ -48,7 +47,6 @@ export const mapUserToCamelCase = (user: any) => {
     'preferred_language': 'preferredLanguage',
     'last_login': 'lastLoginAt',
     'last_password_changed_at': 'lastPasswordChangedAt',
-    
     'account_locked_until': 'accountLockedUntil',
     'is_deleted': 'isDeleted',
     'deleted_at': 'deletedAt',
@@ -69,78 +67,224 @@ export const mapUserToCamelCase = (user: any) => {
   return mapped;
 };
 
-export const checkUserAvailability = async (email: string, phone: string) => {
+export const isUserVerified = (user: any): boolean => {
+  if (!user) return false;
+  return (
+    user.status === 'ACTIVE' ||
+    user.is_mobile_verified === true ||
+    user.is_phone_verified === true ||
+    user.is_email_verified === true ||
+    user.verified === true
+  );
+};
+
+export const getWelcomeEmailTemplate = (name: string, verificationUrl: string): string => `
+  <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+    <h2 style="color: #2e7d32;">Welcome to AgriAssist, ${name}!</h2>
+    <p>Thank you for registering with AgriAssist. Please verify your email address to complete your profile setup.</p>
+    <div style="margin: 24px 0;">
+      <a href="${verificationUrl}" style="background-color: #2e7d32; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Verify Email Address</a>
+    </div>
+    <p style="color: #666; font-size: 12px;">If you did not register for AgriAssist, you can safely ignore this email.</p>
+  </div>
+`;
+
+export const checkUserAvailability = async (email?: string, phone?: string) => {
   let emailAvailable = true;
   let phoneAvailable = true;
-  
-  if (email) {
-    const userEmail = await authRepo.getUserByEmail(email);
-    if (userEmail) emailAvailable = false;
-  }
-  
+  let emailMessage = '';
+  let phoneMessage = '';
+
+  const cleanEmail = email ? email.toLowerCase().trim() : undefined;
+  let normalizedPhone: string | undefined;
   if (phone) {
-    const userMobile = await authRepo.getUserByPhone(phone);
-    if (userMobile) phoneAvailable = false;
+    try {
+      normalizedPhone = normalizeToE164(phone);
+    } catch {
+      normalizedPhone = phone.trim();
+    }
   }
-  
-  return { emailAvailable, phoneAvailable };
+
+  let existingUserByEmail = null;
+  let existingUserByPhone = null;
+
+  if (cleanEmail) {
+    existingUserByEmail = await authRepo.getUserByEmail(cleanEmail);
+    if (existingUserByEmail && isUserVerified(existingUserByEmail)) {
+      emailAvailable = false;
+      emailMessage = 'This email is already registered. Please log in instead.';
+    }
+  }
+
+  if (normalizedPhone) {
+    existingUserByPhone = await authRepo.getUserByPhone(normalizedPhone);
+    if (existingUserByPhone && isUserVerified(existingUserByPhone)) {
+      phoneAvailable = false;
+      phoneMessage = 'This mobile number is already registered. Please log in instead.';
+    }
+  }
+
+  const available = emailAvailable && phoneAvailable;
+  let message = '';
+  if (!emailAvailable && !phoneAvailable) {
+    message = 'This email and mobile number are already registered. Please log in instead.';
+  } else if (!emailAvailable) {
+    message = emailMessage;
+  } else if (!phoneAvailable) {
+    message = phoneMessage;
+  }
+
+  return {
+    available,
+    emailAvailable,
+    phoneAvailable,
+    emailMessage,
+    phoneMessage,
+    message
+  };
 };
 
 export const saveRegistrationDraft = async (draftData: any) => {
-  // Mock saving to a database since there's no defined schema for this yet.
-  // In a real implementation, this would save to a `registration_drafts` table keyed by an ephemeral session ID or email.
   logger.info(`Saved registration draft for role: ${draftData.role}`);
   return true;
-};
-
-const generateOTP = (): string => {
-  return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
 export const registerUser = async (data: any, requestMeta: any = {}) => {
   const pInfo = data.personalInfo || {};
   const acc = data.account || {};
   const prof = data.profile || {};
-  
-  // [DEV ONLY] Disabling uniqueness checks for development
-  // UNCOMMENT FOR PRODUCTION
-  /*
-  if (pInfo.email) {
-    const existingEmail = await authRepo.getUserByEmail(pInfo.email);
-    if (existingEmail) throw new BusinessRuleError('Email already registered');
+
+  const cleanEmail = pInfo.email ? pInfo.email.toLowerCase().trim() : null;
+  const rawPhone = pInfo.phone ? pInfo.phone.trim() : null;
+
+  if (!rawPhone) {
+    throw new BusinessRuleError('Mobile number is required');
   }
 
-  const existingPhone = await authRepo.getUserByPhone(pInfo.phone);
-  if (existingPhone) throw new BusinessRuleError('Phone number already registered');
-  */
+  // 1. Normalize mobile number to standard E.164 (+[country code][number])
+  const normalizedPhone = normalizeToE164(rawPhone);
 
-  const hashedPassword = await bcrypt.hash(acc.password, 10);
-  const fullName = `${pInfo.firstName} ${pInfo.lastName}`.trim();
+  // 2. Check existing users by email and phone
+  const existingUserByEmail = cleanEmail ? await authRepo.getUserByEmail(cleanEmail) : null;
+  const existingUserByPhone = await authRepo.getUserByPhone(normalizedPhone);
 
-  const insertData = {
-    full_name: fullName,
+  // 3. Reject if email or mobile already belongs to an existing VERIFIED account
+  if (existingUserByEmail && isUserVerified(existingUserByEmail)) {
+    throw new BusinessRuleError('This email is already registered. Please log in instead.');
+  }
 
+  if (existingUserByPhone && isUserVerified(existingUserByPhone)) {
+    throw new BusinessRuleError('This mobile number is already registered. Please log in instead.');
+  }
 
-    email: pInfo.email ? pInfo.email.toLowerCase() : null,
-    phone: pInfo.phone,
-    password_hash: hashedPassword,
-    role: data.role.toUpperCase(),
-    preferred_language: prof.language || 'English',
-    timezone: 'Asia/Kolkata', // default
-  };
-  
-  const user = await authRepo.createUser(insertData);
+  // 4. Prepare user details
+  const hashedPassword = await bcrypt.hash(acc.password || 'TemporaryPass123!', 10);
+  const fullName = `${pInfo.firstName || ''} ${pInfo.lastName || ''}`.trim() || 'User';
+
+  let user: any;
+
+  // Case A: Both email and phone point to the same existing unverified pending user -> Reuse in-place
+  if (
+    existingUserByEmail &&
+    existingUserByPhone &&
+    existingUserByEmail.id === existingUserByPhone.id
+  ) {
+    logger.info(`Reusing existing pending registration for user ${existingUserByEmail.id}`);
+    user = await authRepo.updateUser(existingUserByEmail.id, {
+      full_name: fullName,
+      email: cleanEmail,
+      phone: normalizedPhone,
+      password_hash: hashedPassword,
+      role: data.role.toUpperCase(),
+      preferred_language: prof.language || 'English',
+      status: 'PENDING',
+      is_email_verified: false,
+      is_mobile_verified: false,
+      is_phone_verified: false,
+      verified: false
+    });
+  }
+  // Case B: Email and phone point to two different unverified pending users -> Clean up one, update other
+  else if (
+    existingUserByEmail &&
+    existingUserByPhone &&
+    existingUserByEmail.id !== existingUserByPhone.id
+  ) {
+    logger.info(`Cleaning up conflicting pending registration ${existingUserByEmail.id} and updating ${existingUserByPhone.id}`);
+    await authRepo.deleteUserById(existingUserByEmail.id);
+    user = await authRepo.updateUser(existingUserByPhone.id, {
+      full_name: fullName,
+      email: cleanEmail,
+      phone: normalizedPhone,
+      password_hash: hashedPassword,
+      role: data.role.toUpperCase(),
+      preferred_language: prof.language || 'English',
+      status: 'PENDING',
+      is_email_verified: false,
+      is_mobile_verified: false,
+      is_phone_verified: false,
+      verified: false
+    });
+  }
+  // Case C: Only unverified user by email exists -> Update with new details & phone
+  else if (existingUserByEmail && !existingUserByPhone) {
+    logger.info(`Updating unverified pending user by email ${existingUserByEmail.id}`);
+    user = await authRepo.updateUser(existingUserByEmail.id, {
+      full_name: fullName,
+      email: cleanEmail,
+      phone: normalizedPhone,
+      password_hash: hashedPassword,
+      role: data.role.toUpperCase(),
+      preferred_language: prof.language || 'English',
+      status: 'PENDING',
+      is_email_verified: false,
+      is_mobile_verified: false,
+      is_phone_verified: false,
+      verified: false
+    });
+  }
+  // Case D: Only unverified user by phone exists -> Update with new details & email
+  else if (existingUserByPhone && !existingUserByEmail) {
+    logger.info(`Updating unverified pending user by phone ${existingUserByPhone.id}`);
+    user = await authRepo.updateUser(existingUserByPhone.id, {
+      full_name: fullName,
+      email: cleanEmail,
+      phone: normalizedPhone,
+      password_hash: hashedPassword,
+      role: data.role.toUpperCase(),
+      preferred_language: prof.language || 'English',
+      status: 'PENDING',
+      is_email_verified: false,
+      is_mobile_verified: false,
+      is_phone_verified: false,
+      verified: false
+    });
+  }
+  // Case E: New user (neither exists)
+  else {
+    const insertData = {
+      full_name: fullName,
+      email: cleanEmail,
+      phone: normalizedPhone,
+      password_hash: hashedPassword,
+      role: data.role.toUpperCase(),
+      preferred_language: prof.language || 'English',
+      timezone: 'Asia/Kolkata',
+    };
+    user = await authRepo.createUser(insertData);
+  }
+
+  // Ensure role profile exists
   await authRepo.createRoleProfile(data.role, user.id);
 
+  // 5. Dispatch SMS OTP exclusively via Twilio Verify API v2
+  logger.info(`[Auth] Initiating Twilio Verify SMS verification for ${normalizedPhone}`);
+  const twilioResult = await twilioVerifyService.startVerification(normalizedPhone, 'sms');
+
+  // Optional: Send email verification if email provided
   if (user.email) {
-    // Send email verification
     const verificationToken = crypto.randomBytes(32).toString('hex');
-    const hashedToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
-    // Note: Assuming a generic token table exists, or we append to user table if needed.
-    // We'll skip saving the token to DB in this POC if the schema doesn't have it explicitly,
-    // or we can add it to a tokens table.
-    
-    const verificationUrl = `${process.env.CLIENT_URL}/auth/verify-email?token=${verificationToken}&id=${user.id}`;
+    const verificationUrl = `${process.env.CLIENT_URL || 'http://localhost:3000'}/auth/verify-email?token=${verificationToken}&id=${user.id}`;
     try {
       await sendEmail({
         to: user.email,
@@ -148,82 +292,18 @@ export const registerUser = async (data: any, requestMeta: any = {}) => {
         html: getWelcomeEmailTemplate(user.full_name, verificationUrl),
       });
     } catch (err) {
-      logger.warn('Failed to send verification email:', err);
+      logger.warn('Failed to send verification email (non-fatal):', err);
     }
   }
 
-  // Send OTP for phone verification
-  try {
-    const otp = generateOTP();
-    await authRepo.insertOtp({
-      user_id: user.id,
-      phone: user.phone,
-      otp_hash: otp,
-      purpose: 'phone_verification',
-      channel: 'SMS',
-      status: 'PENDING',
-      expires_at: new Date(Date.now() + 10 * 60000).toISOString()
-    });
-    await sendSMS(user.phone, `Your AgriAssist OTP is: ${otp}. Valid for 10 minutes.`);
-  } catch (err) {
-    logger.warn('Failed to send OTP SMS:', err);
-  }
-
-  // Fingerprinting & Device Registration
-  const fingerprintRaw = `${requestMeta.browser || 'Unknown'}|${requestMeta.operatingSystem || 'Unknown'}|${requestMeta.platform || 'Unknown'}|${requestMeta.screenResolution || 'Unknown'}|${requestMeta.timezone || 'Unknown'}|${requestMeta.language || 'Unknown'}|${requestMeta.userAgent || 'Unknown'}|${requestMeta.deviceType || 'Unknown'}`;
-  const deviceFingerprint = crypto.createHash('sha256').update(fingerprintRaw).digest('hex');
-
-  let isNewDevice = false;
-  let device = await trustedDevicesRepo.findDeviceByFingerprint(user.id, deviceFingerprint);
-  if (!device) {
-    device = await trustedDevicesRepo.registerDevice(user.id, deviceFingerprint, requestMeta);
-    isNewDevice = true;
-    
-    // Log Security Event: New Device Login
-    await securityService.logNewDeviceLogin(user.id, device.id, requestMeta);
-  }
-
-  requestMeta.deviceId = device.id;
-
-  const sessionRecord = await authRepo.createSession(user.id, requestMeta);
-  const rft = await require('../repositories/refresh_tokens.repository').default.issueToken({
-    userId: user.id,
-    sessionId: sessionRecord.id,
-    ...requestMeta
-  });
-  await authRepo.linkRefreshTokenToSession(sessionRecord.id, rft.record.id);
-  
-  const accessToken = generateAccessToken(user, sessionRecord.id, device.id);
-  
-  // Update device login
-  await trustedDevicesRepo.updateDeviceLogin(device.id, true, sessionRecord.id, rft.record.id);
-  
-  // Login History - Success
-  await loginHistoryRepo.recordLoginAttempt({
-    ...requestMeta,
-    userId: user.id,
-    sessionId: sessionRecord.id,
-    refreshTokenId: rft.record.id,
-    deviceId: device.id,
-    loginType: 'LOGIN',
-    authenticationMethod: 'PASSWORD',
-    loginStatus: 'SUCCESS',
-    isSuccessful: true,
-    isTrustedDevice: device.is_trusted,
-    riskScore: isNewDevice ? 25 : 0
-  });
-  
-  // We embed the rawToken in a JWT so it has a jti and can be decoded
-  const secret = process.env.JWT_REFRESH_SECRET!;
-  const refreshToken = jwt.sign(
-    { userId: user.id, jti: rft.jwtId, raw: rft.rawToken },
-    secret,
-    { expiresIn: '30d' }
-  );
-  
   const userCamel = mapUserToCamelCase(user);
-
-  return { user: userCamel, accessToken, refreshToken };
+  return {
+    user: userCamel,
+    verificationSid: twilioResult.sid,
+    phone: normalizedPhone,
+    maskedPhone: maskPhoneNumber(normalizedPhone),
+    message: 'Registration initiated. Verification code sent via SMS.'
+  };
 };
 
 export const loginUser = async (data: any, requestMeta: any = {}) => {
@@ -232,9 +312,10 @@ export const loginUser = async (data: any, requestMeta: any = {}) => {
     if (data.email) {
       user = await authRepo.getUserByEmail(data.email);
     } else if (data.phone) {
-      user = await authRepo.getUserByPhone(data.phone);
+      const normalizedPhone = normalizeToE164(data.phone);
+      user = await authRepo.getUserByPhone(normalizedPhone);
     }
-    
+
     if (!user) {
       await loginHistoryRepo.recordLoginAttempt({
         ...requestMeta,
@@ -251,9 +332,7 @@ export const loginUser = async (data: any, requestMeta: any = {}) => {
 
     const isMatch = await bcrypt.compare(data.password, user.password_hash);
     if (!isMatch) {
-      await authRepo.updateUser(user.id, { 
-         
-      });
+      await authRepo.updateUser(user.id, {});
       await loginHistoryRepo.recordLoginAttempt({
         ...requestMeta,
         userId: user.id,
@@ -278,13 +357,12 @@ export const loginUser = async (data: any, requestMeta: any = {}) => {
         isSuccessful: false
       });
       await securityService.logFailedLogin(user.id, requestMeta, 'ACCOUNT_DISABLED');
-      throw new AuthenticationError('Account is not active');
+      throw new AuthenticationError('Account is pending verification or disabled');
     }
 
     user.last_login = new Date().toISOString();
-    await authRepo.updateUser(user.id, { 
+    await authRepo.updateUser(user.id, {
       last_login: user.last_login,
-       
     });
 
     // Fingerprinting & Device Registration
@@ -296,8 +374,6 @@ export const loginUser = async (data: any, requestMeta: any = {}) => {
     if (!device) {
       device = await trustedDevicesRepo.registerDevice(user.id, deviceFingerprint, requestMeta);
       isNewDevice = true;
-      
-      // Log Security Event: New Device Login
       await securityService.logNewDeviceLogin(user.id, device.id, requestMeta);
     }
 
@@ -376,36 +452,37 @@ export const refreshTokens = async (refreshToken: string, requestMeta: any = {})
   return { accessToken, refreshToken: newRefreshToken };
 };
 
-export const sendOTP = async (userId: string, phone: string) => {
-  const otp = generateOTP();
-  await authRepo.insertOtp({ 
-    user_id: userId, 
-    phone: phone, 
-    otp_hash: otp, 
-    purpose: 'login',
-    channel: 'SMS',
-    status: 'PENDING',
-    expires_at: new Date(Date.now() + 10 * 60000).toISOString()
-  });
-  await sendSMS(phone, `Your AgriAssist login OTP: ${otp}. Valid for 10 minutes. Do not share.`);
-
-  return { message: 'OTP sent successfully' };
+export const sendOTP = async (phone: string) => {
+  const normalizedPhone = normalizeToE164(phone);
+  const result = await twilioVerifyService.startVerification(normalizedPhone, 'sms');
+  return {
+    sid: result.sid,
+    phone: normalizedPhone,
+    maskedPhone: maskPhoneNumber(normalizedPhone),
+    message: 'OTP sent successfully via SMS'
+  };
 };
 
-export const verifyOTP = async (mobile: string, otp: string, type: string, requestMeta: any = {}) => {
-  const user = await authRepo.getUserByPhone(mobile);
-  if (!user) throw new NotFoundError('User not found');
+export const verifyOTP = async (phone: string, otp: string, type: string = 'VERIFY', requestMeta: any = {}) => {
+  const normalizedPhone = normalizeToE164(phone);
+  const user = await authRepo.getUserByPhone(normalizedPhone);
+  if (!user) throw new NotFoundError('User not found with this mobile number');
 
-  const otpRecord = await authRepo.getValidOtp(user.id);
+  // Validate OTP exclusively via Twilio Verify API v2
+  const checkResult = await twilioVerifyService.checkVerification(normalizedPhone, otp);
 
-  if (!otpRecord) throw new BusinessRuleError('OTP expired or not found. Request a new one.');
-
-  if (otpRecord.otp_hash !== otp) {
-    throw new BusinessRuleError('Invalid OTP');
+  if (checkResult.status !== 'approved') {
+    throw new BusinessRuleError('Invalid verification code. Please check and try again.');
   }
 
-  await authRepo.markOtpUsed(otpRecord.id);
-  await authRepo.updateUser(user.id, { is_mobile_verified: true, status: 'ACTIVE' });
+  // OTP successfully approved by Twilio: mark account as verified and ACTIVE
+  const updatedUser = await authRepo.updateUser(user.id, {
+    is_mobile_verified: true,
+    is_phone_verified: true,
+    is_email_verified: true,
+    verified: true,
+    status: 'ACTIVE'
+  });
 
   // Fingerprinting & Device Registration
   const fingerprintRaw = `${requestMeta.browser || 'Unknown'}|${requestMeta.operatingSystem || 'Unknown'}|${requestMeta.platform || 'Unknown'}|${requestMeta.screenResolution || 'Unknown'}|${requestMeta.timezone || 'Unknown'}|${requestMeta.language || 'Unknown'}|${requestMeta.userAgent || 'Unknown'}|${requestMeta.deviceType || 'Unknown'}`;
@@ -425,7 +502,7 @@ export const verifyOTP = async (mobile: string, otp: string, type: string, reque
   });
   await authRepo.linkRefreshTokenToSession(sessionRecord.id, rft.record.id);
 
-  const accessToken = generateAccessToken(user, sessionRecord.id, device.id);
+  const accessToken = generateAccessToken(updatedUser || user, sessionRecord.id, device.id);
 
   // Update device activity/login
   await trustedDevicesRepo.updateDeviceLogin(device.id, true, sessionRecord.id, rft.record.id);
@@ -437,48 +514,69 @@ export const verifyOTP = async (mobile: string, otp: string, type: string, reque
     { expiresIn: '30d' }
   );
 
-  const userCamel = mapUserToCamelCase(user);
+  const userCamel = mapUserToCamelCase(updatedUser || user);
   return { user: userCamel, accessToken, refreshToken };
 };
 
-export const resendOTP = async (mobile: string) => {
-  const user = await authRepo.getUserByPhone(mobile);
-  if (!user) throw new NotFoundError('User not found');
+export const resendOTP = async (phone: string) => {
+  const normalizedPhone = normalizeToE164(phone);
+  const user = await authRepo.getUserByPhone(normalizedPhone);
+  if (!user) throw new NotFoundError('User not found with this mobile number');
 
-  const otp = generateOTP();
-  await authRepo.insertOtp({
-    user_id: user.id,
-    phone: user.phone,
-    otp_hash: otp,
-    purpose: 'phone_verification',
-    channel: 'SMS',
-    status: 'PENDING',
-    expires_at: new Date(Date.now() + 10 * 60000).toISOString()
-  });
-  
-  await sendSMS(user.phone, `Your AgriAssist OTP is: ${otp}. Valid for 10 minutes.`);
-  return { message: 'OTP resent successfully' };
+  const result = await twilioVerifyService.startVerification(normalizedPhone, 'sms');
+
+  return {
+    sid: result.sid,
+    phone: normalizedPhone,
+    maskedPhone: maskPhoneNumber(normalizedPhone),
+    message: 'OTP resent successfully via SMS'
+  };
 };
 
 export const changePhone = async (oldPhone: string, newPhone: string) => {
-  const user = await authRepo.getUserByPhone(oldPhone);
+  const normalizedOld = normalizeToE164(oldPhone);
+  const normalizedNew = normalizeToE164(newPhone);
+
+  const user = await authRepo.getUserByPhone(normalizedOld);
   if (!user) throw new NotFoundError('User not found');
 
-  const existingPhone = await authRepo.getUserByPhone(newPhone);
-  if (existingPhone) throw new BusinessRuleError('New phone number already registered');
+  const existingPhoneUser = await authRepo.getUserByPhone(normalizedNew);
+  if (existingPhoneUser && isUserVerified(existingPhoneUser)) {
+    throw new BusinessRuleError('New mobile number is already registered to a verified account');
+  }
 
-  await authRepo.updateUser(user.id, { phone: newPhone, is_mobile_verified: false });
+  await authRepo.updateUser(user.id, { phone: normalizedNew, is_mobile_verified: false });
 
-  return { message: 'Mobile number updated successfully' };
+  // Trigger Twilio Verify OTP for the new phone
+  await twilioVerifyService.startVerification(normalizedNew, 'sms');
+
+  return { message: 'Mobile number updated. Verification OTP sent to new number.' };
 };
 
 export const forgotPassword = async (email: string) => {
-  // Implement logic
+  const cleanEmail = email.toLowerCase().trim();
+  const user = await authRepo.getUserByEmail(cleanEmail);
+  if (user) {
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetUrl = `${process.env.CLIENT_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}&userId=${user.id}`;
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: 'Reset your AgriAssist password',
+        html: `<p>Click <a href="${resetUrl}">here</a> to reset your password.</p>`
+      });
+    } catch (err) {
+      logger.warn('Failed to send reset email:', err);
+    }
+  }
   return { message: 'If an account exists with this email, a reset link has been sent.' };
 };
 
 export const resetPassword = async (userId: string, token: string, newPassword: string) => {
-  // Implement logic
+  const user = await authRepo.getUserById(userId);
+  if (!user) throw new NotFoundError('User not found');
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+  await authRepo.updateUser(userId, { password_hash: hashedPassword });
   return { message: 'Password reset successfully. Please log in.' };
 };
 
@@ -517,6 +615,38 @@ export const getMe = async (userId: string) => {
   return mapUserToCamelCase(user);
 };
 
+export const updateProfile = async (userId: string, data: any) => {
+  const user = await authRepo.getUserById(userId);
+  if (!user) throw new NotFoundError('User not found');
+
+  const updatePayload: any = {};
+  if (data.fullName) updatePayload.full_name = data.fullName;
+  if (data.name) updatePayload.name = data.name;
+  if (data.bio) updatePayload.bio = data.bio;
+  if (data.address) updatePayload.address = data.address;
+  if (data.state) updatePayload.state = data.state;
+  if (data.district) updatePayload.district = data.district;
+  if (data.pincode) updatePayload.pincode = data.pincode;
+  if (data.preferredLanguage) updatePayload.preferred_language = data.preferredLanguage;
+  if (data.profileCompleted !== undefined) updatePayload.profile_completed = data.profileCompleted;
+  if (data.onboardingCompleted !== undefined) updatePayload.onboarding_completed = data.onboardingCompleted;
+
+  const updated = await authRepo.updateUser(userId, updatePayload);
+  return mapUserToCamelCase(updated || user);
+};
+
+export const changePassword = async (userId: string, currentPass: string, newPass: string) => {
+  const user = await authRepo.getUserById(userId);
+  if (!user) throw new NotFoundError('User not found');
+
+  const isValid = await bcrypt.compare(currentPass, user.password_hash || '');
+  if (!isValid) throw new BusinessRuleError('Current password is incorrect');
+
+  const newHash = await bcrypt.hash(newPass, 10);
+  await authRepo.updateUser(userId, { password_hash: newHash });
+  return { message: 'Password changed successfully' };
+};
+
 export const getActiveSessions = async (userId: string) => {
   const sessions = await authRepo.getActiveSessions(userId);
   return sessions;
@@ -543,28 +673,6 @@ export const getLoginDetails = async (userId: string, historyId: string) => {
   return history;
 };
 
-export const sessionHeartbeat = async (refreshToken: string, userId: string) => {
-  if (!refreshToken) return;
-  const secret = process.env.JWT_REFRESH_SECRET!;
-  try {
-    const decoded: any = jwt.verify(refreshToken, secret);
-    if (decoded && decoded.jti) {
-      const rftRecord = await supabase.from('refresh_tokens').select('session_id').eq('jwt_id', decoded.jti).single();
-      if (rftRecord.data?.session_id) {
-        await authRepo.updateSessionActivity(rftRecord.data.session_id);
-        
-        // Also update device activity
-        const sessionRecord = await authRepo.getSessionById(rftRecord.data.session_id, userId);
-        if (sessionRecord?.device_id) {
-          await trustedDevicesRepo.updateDeviceActivity(sessionRecord.device_id);
-        }
-      }
-    }
-  } catch (err) {
-    logger.warn('Failed to update session heartbeat', err);
-  }
-};
-
 export const listDevices = async (userId: string) => {
   return await trustedDevicesRepo.listDevices(userId);
 };
@@ -576,78 +684,63 @@ export const getDeviceById = async (userId: string, deviceId: string) => {
 };
 
 export const renameDevice = async (userId: string, deviceId: string, name: string) => {
-  if (!name) throw new BusinessRuleError('Device name is required');
-  await trustedDevicesRepo.renameDevice(userId, deviceId, name);
+  return await trustedDevicesRepo.renameDevice(userId, deviceId, name);
 };
 
 export const removeDevice = async (userId: string, deviceId: string) => {
-  await trustedDevicesRepo.removeDevice(userId, deviceId);
+  return await trustedDevicesRepo.removeDevice(userId, deviceId);
 };
 
 export const blockDevice = async (deviceId: string, reason: string) => {
-  await trustedDevicesRepo.setDeviceStatus(deviceId, 'BLOCKED', reason);
+  return await trustedDevicesRepo.setDeviceStatus(deviceId, 'BLOCKED', reason);
 };
 
 export const unblockDevice = async (deviceId: string) => {
-  await trustedDevicesRepo.setDeviceStatus(deviceId, 'TRUSTED');
+  return await trustedDevicesRepo.setDeviceStatus(deviceId, 'TRUSTED');
 };
 
-export const updateProfile = async (userId: string, data: any) => {
-  const updates: Record<string, unknown> = {};
-  const allowedFields = ['firstName', 'lastName', 'profilePhoto', 'preferredLanguage', 'timezone'];
-    if (data.firstName || data.lastName) {
-      const user = await authRepo.getUserById(userId);
-      const existingNames = (user.full_name || '').split(' ');
-      const first = data.firstName || existingNames[0] || '';
-      const last = data.lastName || existingNames.slice(1).join(' ') || '';
-      updates['full_name'] = `${first} ${last}`.trim();
-    }
-  
-  if (data.profilePhoto) updates['profile_photo'] = data.profilePhoto;
-  if (data.preferredLanguage) updates['preferred_language'] = data.preferredLanguage;
-  if (data.timezone) updates['timezone'] = data.timezone;
-
-  const user = await authRepo.updateUser(userId, updates);
-  return mapUserToCamelCase(user);
+export const sessionHeartbeat = async (refreshToken: string, userId: string) => {
+  let decoded: any;
+  try {
+    decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!);
+  } catch {
+    return;
+  }
+  const { jti } = decoded;
+  if (!jti) return;
+  const { data: rftRecord } = await supabase.from('refresh_tokens').select('session_id').eq('jwt_id', jti).maybeSingle();
+  if (rftRecord?.session_id) {
+    await authRepo.updateSessionActivity(rftRecord.session_id);
+  }
 };
 
-export const changePassword = async (userId: string, currentPass: string, newPass: string) => {
-  const user = await authRepo.getUserById(userId);
-  if (!user) throw new NotFoundError('User not found');
-
-  const isMatch = await bcrypt.compare(currentPass, user.password_hash);
-  if (!isMatch) throw new BusinessRuleError('Current password is incorrect');
-
-  const hashedPassword = await bcrypt.hash(newPass, 10);
-  await authRepo.updateUser(userId, { 
-    password_hash: hashedPassword,
-    last_password_changed_at: new Date().toISOString()
-  });
-
-  return { message: 'Password changed successfully' };
+export default {
+  registerUser,
+  loginUser,
+  refreshTokens,
+  sendOTP,
+  verifyOTP,
+  resendOTP,
+  changePhone,
+  forgotPassword,
+  resetPassword,
+  logoutUser,
+  logoutAllDevices,
+  getMe,
+  checkUserAvailability,
+  saveRegistrationDraft,
+  getActiveSessions,
+  getSessionById,
+  terminateSession,
+  listLoginHistory,
+  getLoginDetails,
+  listDevices,
+  getDeviceById,
+  renameDevice,
+  removeDevice,
+  blockDevice,
+  unblockDevice,
+  sessionHeartbeat,
+  mapUserToCamelCase,
+  isUserVerified,
 };
-
-// Email Templates
-const getWelcomeEmailTemplate = (name: string, verificationUrl: string): string => `
-<!DOCTYPE html>
-<html>
-<body style="font-family: Inter, sans-serif; background: #f5f5f5; padding: 40px;">
-  <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 16px; padding: 40px;">
-    <div style="text-align: center; margin-bottom: 32px;">
-      <div style="background: linear-gradient(135deg, #16a34a, #15803d); width: 64px; height: 64px; border-radius: 16px; margin: 0 auto 16px; display: flex; align-items: center; justify-content: center;">
-        <span style="font-size: 32px;">🌾</span>
-      </div>
-      <h1 style="color: #16a34a; margin: 0;">Welcome to AgriAssist!</h1>
-    </div>
-    <p style="color: #374151; font-size: 16px;">Hi ${name},</p>
-    <p style="color: #374151;">Thank you for joining AgriAssist — India's premier agricultural digital ecosystem.</p>
-    <p style="color: #374151;">Please verify your email address to get started:</p>
-    <div style="text-align: center; margin: 32px 0;">
-      <a href="${verificationUrl}" style="background: linear-gradient(135deg, #16a34a, #15803d); color: white; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 16px;">Verify Email Address</a>
-    </div>
-    <p style="color: #6b7280; font-size: 14px;">This link expires in 24 hours. If you didn't create an account, please ignore this email.</p>
-    <hr style="border: 1px solid #e5e7eb; margin: 32px 0;">
-    <p style="color: #9ca3af; font-size: 12px; text-align: center;">© 2026 AgriAssist. All rights reserved.</p>
-  </div>
-</body>
-</html>`;

@@ -19,7 +19,7 @@ export default function WasteManagementPage() {
     try {
       setLoading(true);
       // Fetching only waste listings (assuming backend returns all listings, we filter here or backend does)
-      const response = await api.get('/api/farmer/listings?status=active');
+      const response = await api.get('/farmer/listings?status=active');
       if (response.data.success) {
         // Filter for waste listings in case backend doesn't support type filtering yet
         const allListings = response.data.data.listings || [];
@@ -41,7 +41,7 @@ export default function WasteManagementPage() {
 
   const handleDelete = async (id: string) => {
     try {
-      await api.delete(`/api/farmer/listings/${id}`);
+      await api.delete(`/farmer/listings/${id}`);
       toast.success('Listing cancelled');
       setListings(listings.filter(l => l.id !== id));
     } catch (err) {

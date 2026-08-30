@@ -14,7 +14,7 @@ export default function ReportBuilder() {
   const handleGenerate = async () => {
     try {
       setLoading(true);
-      const res = await api.post('/api/reports/generate', {
+      const res = await api.post('/reports/generate', {
         reportType,
         format,
         dateRange: { start: '2024-01-01', end: '2024-12-31' }

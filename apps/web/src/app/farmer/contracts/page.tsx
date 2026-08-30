@@ -19,7 +19,7 @@ export default function FarmerContractsPage() {
   const fetchContracts = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/api/farmer/contracts');
+      const response = await api.get('/farmer/contracts');
       if (response.data.success) {
         setContracts(response.data.data.contracts || []);
       } else {
@@ -39,7 +39,7 @@ export default function FarmerContractsPage() {
 
   const handleSign = async (id: string) => {
     try {
-      const res = await api.patch(`/api/farmer/contracts/${id}/sign`);
+      const res = await api.patch(`/farmer/contracts/${id}/sign`);
       if (res.data.success) {
         toast.success('Contract signed successfully!');
         setSelectedContract(null);

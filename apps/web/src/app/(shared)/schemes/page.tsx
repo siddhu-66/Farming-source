@@ -25,7 +25,7 @@ export default function SchemesPage() {
   const fetchSchemes = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/api/schemes');
+      const response = await api.get('/schemes');
       if (response.data.success) {
         setSchemes(response.data.data.schemes || []);
       } else {
@@ -45,7 +45,7 @@ export default function SchemesPage() {
   const handleCheckEligibility = async (schemeId: string) => {
     setCheckingEligibility(schemeId);
     try {
-      const { data } = await api.post('/api/schemes/eligibility', { schemeId });
+      const { data } = await api.post('/schemes/eligibility', { schemeId });
       setEligibilityResult({
         id: schemeId,
         score: data.data.score,

@@ -17,7 +17,7 @@ export default function ReportsCenter() {
   const handleExport = async (reportType: string, format: string) => {
     setExporting(true);
     try {
-      const res = await api.post('/api/v1/analytics/export', { reportType, format });
+      const res = await api.post('/analytics/export', { reportType, format });
       if (res.data?.success) {
         toast.success(`Report exported: ${res.data.data.report.fileUrl}`);
       }
@@ -31,7 +31,7 @@ export default function ReportsCenter() {
   const handleSchedule = async (reportType: string) => {
     setScheduling(true);
     try {
-      const res = await api.post('/api/v1/analytics/schedule', {
+      const res = await api.post('/analytics/schedule', {
         reportType,
         frequency: 'weekly',
         channels: ['email']

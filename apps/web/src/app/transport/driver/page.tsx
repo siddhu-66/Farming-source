@@ -1,169 +1,171 @@
 "use client";
 
-import React, { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { MapPin, Navigation, Package, Camera, CheckCircle, Smartphone, Truck } from "lucide-react";
+import { useState, useEffect } from "react";
+import { motion } from "framer-motion";
+import { ArrowLeft, User, Phone, Star, Truck, Loader2, Circle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { useRouter } from "next/navigation";
+import api from "@/lib/api";
 import toast from "react-hot-toast";
 
-// Mock data for a driver's active trip
-const activeTrip = {
-  id: "TRP-9876",
-  crop: "Tomato",
-  weight: "500 kg",
-  pickup: "Farm 12, Nashik",
-  dropoff: "Azadpur Mandi, Delhi",
-  status: "assigned", // assigned, en_route_pickup, loading, in_transit, delivered
-};
+interface Driver {
+  id: string;
+  name: string;
+  phone: string;
+  status: 'available' | 'on_trip' | 'off_duty';
+  rating: number;
+  trips: number;
+  vehicleAssigned: string | null;
+}
 
 export default function DriverPortal() {
-  const [status, setStatus] = useState(activeTrip.status);
+  const router = useRouter();
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const handleNextStep = () => {
+  useEffect(() => {
+    const fetchDrivers = async () => {
+      try {
+        const response = await api.get('/transport/drivers');
+        if (response.data.success) {
+          setDrivers(response.data.data.drivers || []);
+        }
+      } catch (error: any) {
+        toast.error(error.response?.data?.message || 'Failed to fetch drivers');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDrivers();
+  }, []);
+
+  const getStatusColor = (status: string) => {
     switch (status) {
-      case "assigned":
-        setStatus("en_route_pickup");
-        toast.success("Navigating to pickup!");
-        break;
-      case "en_route_pickup":
-        setStatus("loading");
-        toast.success("Arrived at pickup. Start loading.");
-        break;
-      case "loading":
-        setStatus("in_transit");
-        toast.success("Loading complete. Trip started!");
-        break;
-      case "in_transit":
-        setStatus("delivered");
-        toast.success("Delivery completed successfully!");
-        break;
+      case 'available':
+        return 'bg-green-100 text-green-700 border-green-200';
+      case 'on_trip':
+        return 'bg-orange-100 text-orange-700 border-orange-200';
+      case 'off_duty':
+        return 'bg-gray-100 text-gray-700 border-gray-200';
       default:
-        break;
+        return 'bg-gray-100 text-gray-700 border-gray-200';
     }
   };
 
+  const getStatusDotColor = (status: string) => {
+    switch (status) {
+      case 'available':
+        return 'bg-green-500';
+      case 'on_trip':
+        return 'bg-orange-500';
+      case 'off_duty':
+        return 'bg-gray-400';
+      default:
+        return 'bg-gray-400';
+    }
+  };
+
+  const formatStatus = (status: string) => {
+    return status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="icon" onClick={() => router.back()}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <h1 className="text-3xl font-bold">Drivers</h1>
+        </div>
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-md mx-auto space-y-4 pb-24 h-[calc(100vh-80px)] flex flex-col bg-slate-50 relative overflow-hidden shadow-2xl rounded-xl border mt-4">
-      {/* Mobile-like header */}
-      <div className="bg-emerald-600 text-white p-4 rounded-t-xl shrink-0 z-10 shadow-md flex justify-between items-center">
-        <div>
-          <h2 className="font-bold text-lg">Driver App</h2>
-          <p className="text-xs text-emerald-100">Vehicle: DL-1T-4567</p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="icon" onClick={() => router.back()}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <h1 className="text-3xl font-bold">Drivers</h1>
         </div>
-        <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
-          <Smartphone className="w-5 h-5 text-white" />
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 relative">
-        <h3 className="font-bold text-lg text-slate-800">Current Trip</h3>
-        
-        <Card className="border-emerald-100 shadow-sm relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500" />
-          <CardContent className="p-4 space-y-4">
-            <div className="flex justify-between items-start">
-              <div>
-                <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">TRIP {activeTrip.id}</span>
-                <h4 className="font-bold text-lg mt-2">{activeTrip.crop}</h4>
-                <p className="text-sm text-slate-500">{activeTrip.weight}</p>
-              </div>
-              <div className="text-right">
-                <span className="text-xs font-bold text-slate-500 uppercase">Est. Payout</span>
-                <p className="font-bold text-lg text-slate-800">₹4,500</p>
-              </div>
-            </div>
-
-            <div className="relative pl-6 space-y-4 before:absolute before:inset-y-2 before:left-2 before:w-0.5 before:bg-slate-200">
-              <div className="relative">
-                <div className="absolute -left-[27px] w-4 h-4 rounded-full bg-emerald-500 border-2 border-white shadow-sm z-10" />
-                <p className="text-xs text-slate-500 font-bold mb-0.5">PICKUP</p>
-                <p className="text-sm font-medium">{activeTrip.pickup}</p>
-              </div>
-              <div className="relative">
-                <div className={`absolute -left-[27px] w-4 h-4 rounded-full border-2 border-white shadow-sm z-10 ${status === 'delivered' ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                <p className="text-xs text-slate-500 font-bold mb-0.5">DROPOFF</p>
-                <p className="text-sm font-medium">{activeTrip.dropoff}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Action Area */}
-        <div className="bg-white rounded-xl p-4 shadow-sm border text-center space-y-4">
-          <AnimatePresence mode="wait">
-            {status === 'assigned' && (
-              <motion.div key="assigned" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-                <MapPin className="w-12 h-12 text-emerald-500 mx-auto" />
-                <div>
-                  <h4 className="font-bold text-lg">New Trip Assigned</h4>
-                  <p className="text-sm text-slate-500">Pickup is 5km away</p>
-                </div>
-                <Button onClick={handleNextStep} className="w-full bg-emerald-600 hover:bg-emerald-700 text-lg h-14 rounded-xl">
-                  <Navigation className="w-5 h-5 mr-2" /> Start Navigation
-                </Button>
-              </motion.div>
-            )}
-
-            {status === 'en_route_pickup' && (
-              <motion.div key="en_route" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-                <div className="w-full h-32 bg-slate-100 rounded-lg overflow-hidden relative flex items-center justify-center">
-                  <div className="absolute inset-0 opacity-50 bg-[url('https://maps.wikimedia.org/osm-intl/12/2924/1676.png')] bg-cover bg-center"></div>
-                  <Navigation className="w-10 h-10 text-blue-600 relative z-10" />
-                </div>
-                <Button onClick={handleNextStep} className="w-full bg-blue-600 hover:bg-blue-700 text-lg h-14 rounded-xl">
-                  Arrived at Pickup
-                </Button>
-              </motion.div>
-            )}
-
-            {status === 'loading' && (
-              <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-                <Package className="w-12 h-12 text-amber-500 mx-auto animate-bounce" />
-                <div>
-                  <h4 className="font-bold text-lg">Loading Cargo</h4>
-                  <p className="text-sm text-slate-500">Please verify the weight: {activeTrip.weight}</p>
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" className="flex-1 h-14 rounded-xl">
-                    <Camera className="w-5 h-5 mr-2" /> Take Photo
-                  </Button>
-                  <Button onClick={handleNextStep} className="flex-1 bg-amber-600 hover:bg-amber-700 h-14 rounded-xl text-white">
-                    Start Trip
-                  </Button>
-                </div>
-              </motion.div>
-            )}
-
-            {status === 'in_transit' && (
-              <motion.div key="in_transit" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-                <div className="w-full h-32 bg-slate-100 rounded-lg overflow-hidden relative flex items-center justify-center">
-                  <div className="absolute inset-0 opacity-50 bg-[url('https://maps.wikimedia.org/osm-intl/12/2924/1676.png')] bg-cover bg-center"></div>
-                  <Truck className="w-10 h-10 text-emerald-600 relative z-10" />
-                </div>
-                <Button onClick={handleNextStep} className="w-full bg-emerald-600 hover:bg-emerald-700 text-lg h-14 rounded-xl">
-                  Complete Delivery
-                </Button>
-              </motion.div>
-            )}
-
-            {status === 'delivered' && (
-              <motion.div key="delivered" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} className="space-y-4 py-6">
-                <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
-                  <CheckCircle className="w-10 h-10 text-emerald-600" />
-                </div>
-                <div>
-                  <h4 className="font-bold text-2xl text-emerald-800">Trip Completed!</h4>
-                  <p className="text-slate-500 mt-2">Earnings of ₹4,500 have been added to your wallet.</p>
-                </div>
-                <Button variant="outline" onClick={() => setStatus('assigned')} className="w-full mt-4">
-                  Find Next Trip
-                </Button>
-              </motion.div>
-            )}
-          </AnimatePresence>
+        <div className="text-sm text-gray-500">
+          {drivers.length} driver{drivers.length !== 1 ? 's' : ''} total
         </div>
       </div>
+
+      {drivers.length === 0 ? (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-8 text-center bg-orange-50 rounded-xl border border-dashed border-orange-200"
+        >
+          <User className="h-12 w-12 text-orange-300 mx-auto mb-4" />
+          <h2 className="text-xl font-medium text-gray-700">No Drivers Found</h2>
+          <p className="text-gray-500 mt-2">Add drivers to manage your fleet.</p>
+        </motion.div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {drivers.map((driver, index) => (
+            <motion.div
+              key={driver.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.1 }}
+            >
+              <Card className="border-orange-200 hover:shadow-lg transition-all hover:scale-[1.02]">
+                <CardContent className="p-6">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-white font-bold text-lg">
+                        {driver.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-lg">{driver.name}</h3>
+                        <div className="flex items-center gap-1 mt-1">
+                          <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                          <span className="text-sm font-medium text-gray-700">{driver.rating}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className={`w-2 h-2 rounded-full ${getStatusDotColor(driver.status)}`} />
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Phone className="h-4 w-4 text-gray-400" />
+                      <span>{driver.phone}</span>
+                    </div>
+
+                    {driver.vehicleAssigned && (
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <Truck className="h-4 w-4 text-gray-400" />
+                        <span>{driver.vehicleAssigned}</span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                      <span className="text-xs text-gray-500">{driver.trips} trips</span>
+                      <span className={`text-xs font-semibold px-2.5 py-1 rounded border ${getStatusColor(driver.status)}`}>
+                        {formatStatus(driver.status)}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

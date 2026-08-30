@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Droplets, Power, Play, Square, Loader2, ArrowLeft, Waves, Clock } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -14,6 +14,25 @@ export default function SmartIrrigation() {
   const [loading, setLoading] = useState(false);
   const [isIrrigating, setIsIrrigating] = useState(false);
   const [logId, setLogId] = useState<string | null>(null);
+  const [telemetry, setTelemetry] = useState<any>(null);
+  const [fetchingSensors, setFetchingSensors] = useState(true);
+
+  useEffect(() => {
+    fetchSensors();
+  }, []);
+
+  const fetchSensors = async () => {
+    try {
+      const res = await api.get('/api/v1/iot/sensors');
+      if (res.data?.success) {
+        setTelemetry(res.data.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch sensors", err);
+    } finally {
+      setFetchingSensors(false);
+    }
+  };
 
   const toggleIrrigation = async () => {
     setLoading(true);
@@ -137,11 +156,29 @@ export default function SmartIrrigation() {
           <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-100">
             <CardContent className="p-6">
               <h3 className="font-bold text-blue-900 flex items-center gap-2 mb-2">
-                <Droplets className="w-5 h-5 text-blue-600" /> AI Recommendation
+                <Droplets className="w-5 h-5 text-blue-600" /> Soil Moisture Status
               </h3>
-              <p className="text-blue-800 text-sm">
-                Soil moisture in North Field is optimal (45%). Based on the weather forecast (0mm rain), no immediate irrigation is required. Next scheduled watering at 6:00 PM is sufficient.
-              </p>
+              {fetchingSensors ? (
+                <div className="flex items-center gap-2 text-blue-600">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm">Loading sensor data...</span>
+                </div>
+              ) : !telemetry ? (
+                <p className="text-blue-800 text-sm">
+                  No soil moisture telemetry available. Connect sensors to monitor soil conditions.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center p-3 bg-white/60 rounded-lg">
+                    <span className="text-sm font-medium text-blue-900">Current Soil Moisture</span>
+                    <span className="text-sm font-bold text-blue-700">{typeof telemetry.soilMoisture === 'number' ? `${telemetry.soilMoisture.toFixed(1)}%` : '--'}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 bg-white/60 rounded-lg">
+                    <span className="text-sm font-medium text-blue-900">Water Tank Level</span>
+                    <span className="text-sm font-bold text-blue-700">{typeof telemetry.waterTankLevel === 'number' ? `${telemetry.waterTankLevel}%` : '--'}</span>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

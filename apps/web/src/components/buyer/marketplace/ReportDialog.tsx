@@ -28,7 +28,7 @@ export function ReportDialog({ isOpen, onClose, listingId }: ReportDialogProps) 
   const handleSubmit = async () => {
     try {
       setLoading(true);
-      await api.post('/api/marketplace/reports', { listingId, reason });
+      await api.post('/marketplace/reports', { listingId, reason });
       toast.success('Listing reported successfully. Our team will review it.');
       onClose();
     } catch (error: any) {

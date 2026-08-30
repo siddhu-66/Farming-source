@@ -34,7 +34,7 @@ export function BidDialog({ isOpen, onClose, listingId, cropName, currentPrice, 
 
     try {
       setLoading(true);
-      await api.post('/api/marketplace/bids', { listingId, offerPrice, quantity });
+      await api.post('/marketplace/bids', { listingId, offerPrice, quantity });
       toast.success('Bid placed successfully!');
       onSuccess?.();
       onClose();

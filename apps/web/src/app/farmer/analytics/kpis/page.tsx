@@ -22,7 +22,7 @@ export default function KpisTrends() {
 
   const fetchKpis = async () => {
     try {
-      const res = await api.get('/api/v1/analytics/kpis');
+      const res = await api.get('/analytics/kpis');
       if (res.data?.success) {
         setKpis(res.data.data.kpis);
       }

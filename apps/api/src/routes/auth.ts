@@ -57,11 +57,12 @@ router.post('/register/check-email', authController.checkEmail);
 router.post('/register/check-phone', authController.checkPhone);
 
 // OTP APIs
+router.post('/send-otp', authController.sendOtp);
 router.post('/verify-otp', authController.verifyOtp);
 router.post('/resend-otp', authController.resendOtp);
 router.post('/change-mobile', authController.changePhone);
 // Aliases for old endpoints if any were relying on them
-router.post('/otp/send', authController.requestOtp);
+router.post('/otp/send', authController.sendOtp);
 router.post('/otp/verify', authController.verifyOtp);
 router.post('/otp/resend', authController.resendOtp);
 

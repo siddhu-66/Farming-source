@@ -31,7 +31,7 @@ export default function ImageDiagnosis() {
     setAnalyzing(true);
     
     try {
-      const res = await api.post('/api/v1/ai/image', {
+      const res = await api.post('/ai/image', {
         imageUrl: "base64_simulated_payload",
         cropType: "Tomato"
       });

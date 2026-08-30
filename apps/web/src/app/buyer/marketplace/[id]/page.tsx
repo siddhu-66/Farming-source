@@ -31,11 +31,11 @@ export default function ListingDetailsPage({ params }: { params: Promise<{ id: s
   useEffect(() => {
     const fetchListing = async () => {
       try {
-        const response = await api.get(`/api/marketplace/${id}`);
+        const response = await api.get(`/marketplace/${id}`);
         setListing(response.data.data.listing);
-        
+
         // Fetch similar listings
-        const similarRes = await api.get(`/api/marketplace/similar/${id}`);
+        const similarRes = await api.get(`/marketplace/similar/${id}`);
         setSimilarListings(similarRes.data.data.similar || []);
       } catch (error) {
         toast.error('Failed to load listing details');
@@ -50,11 +50,11 @@ export default function ListingDetailsPage({ params }: { params: Promise<{ id: s
   const handleSaveToggle = async () => {
     try {
       if (isSaved) {
-        await api.delete(`/api/marketplace/save/${id}`);
+        await api.delete(`/marketplace/save/${id}`);
         setIsSaved(false);
         toast.success('Listing removed from saved');
       } else {
-        await api.post('/api/marketplace/save', { listingId: id });
+        await api.post('/marketplace/save', { listingId: id });
         setIsSaved(true);
         toast.success('Listing saved');
       }

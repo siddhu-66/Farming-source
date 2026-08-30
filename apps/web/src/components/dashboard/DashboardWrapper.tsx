@@ -7,18 +7,16 @@ import { useSocket } from '../../hooks/useSocket';
 import { useAuthStore } from '../../stores/authStore';
 
 export const DashboardWrapper = ({ children }: { children: React.ReactNode }) => {
-  const { isReady, initialize, error } = useDashboardStore();
+  const { isReady, isInitializing, initialize, error } = useDashboardStore();
   const token = useAuthStore((state) => state.token);
 
   useSocket();
 
   useEffect(() => {
-    if (token) {
+    if (token && !isReady && !isInitializing) {
       initialize(token);
-    } else {
-      initialize('');
     }
-  }, [initialize, token]);
+  }, [token, isReady, isInitializing, initialize]);
 
   if (error) {
     return (

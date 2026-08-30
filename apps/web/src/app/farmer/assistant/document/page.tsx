@@ -32,7 +32,7 @@ export default function DocumentOCR() {
     setAnalyzing(true);
     
     try {
-      const res = await api.post('/api/v1/ai/document/ocr', {
+      const res = await api.post('/ai/document/ocr', {
         documentUrl: "base64_simulated_payload",
         documentType: docType
       });

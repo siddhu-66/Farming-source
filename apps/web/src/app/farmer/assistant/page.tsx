@@ -31,7 +31,7 @@ export default function AssistantDashboard() {
 
   const fetchHistory = async () => {
     try {
-      const res = await api.get('/api/v1/ai/history');
+      const res = await api.get('/ai/history');
       if (res.data?.success) {
         setConversations(res.data.data.conversations.slice(0, 3));
       }

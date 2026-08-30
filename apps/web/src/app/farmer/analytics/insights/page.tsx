@@ -21,8 +21,8 @@ export default function InsightsAndScorecard() {
   const fetchData = async () => {
     try {
       const [insightsRes, scorecardRes] = await Promise.all([
-        api.get('/api/v1/analytics/insights'),
-        api.get('/api/v1/analytics/scorecard')
+        api.get('/analytics/insights'),
+        api.get('/analytics/scorecard')
       ]);
       if (insightsRes.data?.success) setInsights(insightsRes.data.data.insights);
       if (scorecardRes.data?.success) setScorecard(scorecardRes.data.data.scorecard);

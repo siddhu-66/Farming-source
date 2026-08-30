@@ -18,7 +18,7 @@ export default function SystemActions({ initialData }: { initialData: any }) {
     try {
       setLoadingAction('backup');
       const toastId = toast.loading('Initiating system backup...');
-      const res = await api.post('/api/admin/settings/backup');
+      const res = await api.post('/admin/settings/backup');
       toast.success(res.data.message || 'Backup completed.', { id: toastId });
     } catch (e) {
       toast.error('Backup failed.');
@@ -32,7 +32,7 @@ export default function SystemActions({ initialData }: { initialData: any }) {
     try {
       setLoadingAction('restore');
       const toastId = toast.loading('Restoring system from latest backup...');
-      const res = await api.post('/api/admin/settings/restore');
+      const res = await api.post('/admin/settings/restore');
       toast.success(res.data.message || 'Restore completed.', { id: toastId });
     } catch (e) {
       toast.error('Restore failed.');
@@ -44,7 +44,7 @@ export default function SystemActions({ initialData }: { initialData: any }) {
   const toggleMaintenance = async (checked: boolean) => {
     setMaintenance({ enabled: checked });
     try {
-      await api.patch('/api/admin/settings/maintenance', { enabled: checked });
+      await api.patch('/admin/settings/maintenance', { enabled: checked });
       toast.success(`Maintenance mode ${checked ? 'enabled' : 'disabled'}`);
     } catch (e) {
       setMaintenance({ enabled: !checked });

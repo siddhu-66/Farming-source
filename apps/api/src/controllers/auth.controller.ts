@@ -62,6 +62,18 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
       userAgent: req.headers['user-agent'],
     };
     const result = await authService.loginUser(validatedData, requestMeta);
+
+    // Set HTTP cookie for Next.js middleware
+    if (result.accessToken) {
+      res.cookie('token', result.accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+        path: '/'
+      });
+    }
+
     res.json(formatSuccess('Login successful', result));
   } catch (error: any) {
     if (error.name === 'ZodError') {
@@ -81,19 +93,29 @@ export const refreshToken = async (req: Request, res: Response, next: NextFuncti
       userAgent: req.headers['user-agent'],
     };
     const result = await authService.refreshTokens(refreshToken, requestMeta);
+
+    // Update HTTP cookie with new access token
+    if (result.accessToken) {
+      res.cookie('token', result.accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        path: '/'
+      });
+    }
+
     res.json(formatSuccess('Token refreshed', result));
   } catch (error) {
     next(error);
   }
 };
 
-export const requestOtp = async (req: Request, res: Response, next: NextFunction) => {
+export const sendOtp = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const validatedData = otpLoginSchema.parse(req.body);
-    // Real implementation would look up user ID by phone
-    // We expect this logic to be part of authService.sendOTP later if expanded
-    // For now we'll throw NotImplemented as this is a stub
-    res.json(formatSuccess('OTP Requested', validatedData));
+    const { phone } = resendOtpSchema.parse(req.body);
+    const result = await authService.sendOTP(phone);
+    res.json(formatSuccess('OTP sent successfully', result));
   } catch (error: any) {
     if (error.name === 'ZodError') {
       next(new ValidationError('Invalid input data', error.errors));
@@ -101,6 +123,10 @@ export const requestOtp = async (req: Request, res: Response, next: NextFunction
       next(error);
     }
   }
+};
+
+export const requestOtp = async (req: Request, res: Response, next: NextFunction) => {
+  return sendOtp(req, res, next);
 };
 
 export const verifyOtp = async (req: Request, res: Response, next: NextFunction) => {
@@ -111,6 +137,18 @@ export const verifyOtp = async (req: Request, res: Response, next: NextFunction)
       userAgent: req.headers['user-agent'],
     };
     const result = await authService.verifyOTP(phone, otp, 'VERIFY', requestMeta);
+
+    // Set HTTP cookie if tokens are returned (OTP login)
+    if (result.accessToken) {
+      res.cookie('token', result.accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        path: '/'
+      });
+    }
+
     res.json(formatSuccess('OTP Verified', result));
   } catch (error: any) {
     if (error.name === 'ZodError') {
@@ -156,6 +194,10 @@ export const logout = async (req: Request, res: Response, next: NextFunction) =>
     if (userId && refreshToken) {
       await authService.logoutUser(userId, refreshToken);
     }
+
+    // Clear HTTP cookie
+    res.clearCookie('token', { path: '/' });
+
     res.json(formatSuccess('Logged out successfully'));
   } catch (error) {
     next(error);
@@ -372,8 +414,11 @@ export const unblockDevice = async (req: Request, res: Response, next: NextFunct
 export const checkEmail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { email } = req.body;
-    // Logic to check email availability
-    res.json(formatSuccess('Email availability checked'));
+    const result = await authService.checkUserAvailability(email, undefined);
+    res.json(formatSuccess(result.emailMessage || 'Email availability checked', {
+      available: result.emailAvailable,
+      message: result.emailMessage
+    }));
   } catch (error) {
     next(error);
   }
@@ -382,8 +427,11 @@ export const checkEmail = async (req: Request, res: Response, next: NextFunction
 export const checkPhone = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { phone } = req.body;
-    // Logic to check phone availability
-    res.json(formatSuccess('Phone availability checked'));
+    const result = await authService.checkUserAvailability(undefined, phone);
+    res.json(formatSuccess(result.phoneMessage || 'Phone availability checked', {
+      available: result.phoneAvailable,
+      message: result.phoneMessage
+    }));
   } catch (error) {
     next(error);
   }
@@ -393,10 +441,19 @@ export const checkPhone = async (req: Request, res: Response, next: NextFunction
 
 export const verifyPasswordResetOtp = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Logic to verify password reset OTP
-    res.json(formatSuccess('OTP verified for password reset'));
-  } catch (error) {
-    next(error);
+    const { phone, otp } = verifyOtpSchema.parse(req.body);
+    const requestMeta = {
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    };
+    const result = await authService.verifyOTP(phone, otp, 'PASSWORD_RESET', requestMeta);
+    res.json(formatSuccess('OTP verified for password reset', result));
+  } catch (error: any) {
+    if (error.name === 'ZodError') {
+      next(new ValidationError('Invalid input data', error.errors));
+    } else {
+      next(error);
+    }
   }
 };
 

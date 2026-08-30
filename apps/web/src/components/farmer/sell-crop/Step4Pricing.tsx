@@ -14,7 +14,7 @@ export function Step4Pricing() {
       if (!cropName) return;
       setLoading(true);
       try {
-        const res = await api.get('/api/marketplace/price-suggestion', {
+        const res = await api.get('/marketplace/price-suggestion', {
           params: { cropName, grade: qualityGrade, quantity }
         });
         if (res.data?.success) {

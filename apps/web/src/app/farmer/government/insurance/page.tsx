@@ -30,7 +30,7 @@ export default function InsuranceDashboard() {
   const fetchInsuranceData = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/api/v1/insurance');
+      const res = await api.get('/insurance');
       if (res.data?.success) {
         setData(res.data.data);
       }
@@ -66,7 +66,7 @@ export default function InsuranceDashboard() {
 
   const submitClaim = async () => {
     try {
-      const res = await api.post('/api/v1/insurance/claims', {
+      const res = await api.post('/insurance/claims', {
         ...claimForm,
         requestedAmount: Number(claimForm.requestedAmount),
         evidenceDocuments: ['photo_1.jpg', 'survey_report.pdf']

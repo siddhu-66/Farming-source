@@ -27,8 +27,8 @@ export default function SecurityForm({ initialData }: { initialData: any }) {
     try {
       setLoading(true);
       await Promise.all([
-        api.patch('/api/admin/settings/security', securityData),
-        api.patch('/api/admin/settings/featureFlags', flags)
+        api.patch('/admin/settings/security', securityData),
+        api.patch('/admin/settings/featureFlags', flags)
       ]);
       toast.success('Security and Feature Flags updated!');
     } catch (e) {

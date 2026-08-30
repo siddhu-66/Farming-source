@@ -23,7 +23,7 @@ export default function GovernmentSchemes() {
   const fetchSchemes = async () => {
     try {
       setLoading(true);
-      const res = await api.get(`/api/v1/government/schemes${category !== 'all' ? `?category=${category}` : ''}`);
+      const res = await api.get(`/government/schemes${category !== 'all' ? `?category=${category}` : ''}`);
       if (res.data?.success) {
         setSchemes(res.data.data.schemes);
       }

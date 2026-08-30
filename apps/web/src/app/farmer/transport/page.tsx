@@ -18,7 +18,7 @@ export default function FarmerTransportPage() {
   const fetchBookings = async () => {
     try {
       setFetching(true);
-      const res = await api.get('/api/farmer/transport');
+      const res = await api.get('/farmer/transport');
       if (res.data.success) {
         setBookings(res.data.data.bookings || []);
       }
@@ -56,7 +56,7 @@ export default function FarmerTransportPage() {
     };
 
     try {
-      const res = await api.post('/api/farmer/transport', payload);
+      const res = await api.post('/farmer/transport', payload);
       if (res.data.success) {
         toast.success('Transport requested successfully!');
         fetchBookings();

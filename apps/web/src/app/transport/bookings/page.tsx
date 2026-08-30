@@ -23,9 +23,9 @@ export default function TransportBookingsPage() {
     try {
       setLoading(true);
       const [availableRes, activeRes, vehiclesRes] = await Promise.all([
-        api.get('/api/transport/bookings?status=available'),
-        api.get('/api/transport/bookings'),
-        api.get('/api/transport/vehicles')
+        api.get('/transport/bookings?status=available'),
+        api.get('/transport/bookings'),
+        api.get('/transport/vehicles')
       ]);
       setRequests(availableRes.data.data?.bookings || []);
       
@@ -52,7 +52,7 @@ export default function TransportBookingsPage() {
 
     try {
       setAcceptingId(id);
-      await api.patch(`/api/transport/bookings/${id}/accept`, {
+      await api.patch(`/transport/bookings/${id}/accept`, {
         vehicleId: availableVehicle.id,
         fare: proposedFare || 5000
       });

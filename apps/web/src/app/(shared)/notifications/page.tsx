@@ -21,8 +21,8 @@ export default function NotificationsPage() {
 
   const fetchNotifications = async () => {
     try {
-      const { data } = await api.get('/api/notifications', { 
-        params: { limit: 50 } 
+      const { data } = await api.get('/notifications', {
+        params: { limit: 50 }
       });
       // Handle the mapped notifications
       setNotifications(data.data?.notifications || []);
@@ -39,8 +39,8 @@ export default function NotificationsPage() {
 
   const handleMarkRead = async (id: string) => {
     try {
-      await api.patch(`/api/notifications/${id}/read`);
-      setNotifications(prev => 
+      await api.patch(`/notifications/${id}/read`);
+      setNotifications(prev =>
         prev.map(n => n.id === id ? { ...n, isRead: true } : n)
       );
     } catch (error) {
@@ -50,7 +50,7 @@ export default function NotificationsPage() {
 
   const handleMarkAllRead = async () => {
     try {
-      await api.patch('/api/notifications/read-all');
+      await api.patch('/notifications/read-all');
       setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
       toast.success('All marked as read');
     } catch (error) {
@@ -60,7 +60,7 @@ export default function NotificationsPage() {
 
   const handleDelete = async (id: string) => {
     try {
-      await api.delete(`/api/notifications/${id}`);
+      await api.delete(`/notifications/${id}`);
       setNotifications(prev => prev.filter(n => n.id !== id));
       toast.success('Notification deleted');
     } catch (error) {

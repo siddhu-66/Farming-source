@@ -26,7 +26,7 @@ export default function AnalyticsDashboard() {
 
   const fetchDashboard = async () => {
     try {
-      const res = await api.get('/api/v1/analytics/dashboard');
+      const res = await api.get('/analytics/dashboard');
       if (res.data?.success) {
         setDashboard(res.data.data);
       }

@@ -49,7 +49,7 @@ export default function AIChatInterface() {
     setLoading(true);
 
     try {
-      const res = await api.post('/api/v1/ai/chat', {
+      const res = await api.post('/ai/chat', {
         message: userMsg,
         conversationId
       });

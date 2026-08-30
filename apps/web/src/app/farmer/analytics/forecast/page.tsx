@@ -22,7 +22,7 @@ export default function Forecasts() {
 
   const fetchForecasts = async () => {
     try {
-      const res = await api.get('/api/v1/analytics/forecast');
+      const res = await api.get('/analytics/forecast');
       if (res.data?.success) {
         setForecasts(res.data.data.forecasts);
       }

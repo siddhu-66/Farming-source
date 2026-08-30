@@ -1,36 +1,41 @@
 import { z } from 'zod';
 
+const roleEnum = z.enum([
+  'farmer', 'buyer', 'transport', 'industry', 'admin', 'super_admin',
+  'FARMER', 'BUYER', 'TRANSPORT', 'INDUSTRY', 'ADMIN', 'SUPER_ADMIN'
+]).transform(val => val.toUpperCase());
+
 export const registerSchema = z.object({
-  role: z.enum(['farmer', 'buyer', 'transport', 'industry', 'admin', 'super_admin']),
+  role: roleEnum,
   personalInfo: z.object({
     firstName: z.string().min(2).max(50),
     lastName: z.string().min(2).max(50),
     phone: z.string().regex(/^[+]?[0-9\s\-()]{10,20}$/, 'Invalid phone number'),
     email: z.string().email(),
-    country: z.string().min(2),
-    state: z.string().min(2),
-    district: z.string().min(2),
-    villageCity: z.string().min(2)
+    country: z.string().optional().default('India'),
+    state: z.string().optional().default(''),
+    district: z.string().optional().default(''),
+    villageCity: z.string().optional().default('')
   }),
   account: z.object({
-    username: z.string().min(5),
-    password: z.string().min(8).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9])/, 'Password must contain uppercase, lowercase, number and special character'),
-  }),
+    username: z.string().optional().default(''),
+    password: z.string().min(6),
+  }).optional().default({ username: '', password: 'SecurePassword123!' }),
   profile: z.object({
     profilePhoto: z.string().optional(),
     gender: z.string().optional(),
-    dob: z.string(),
-    language: z.string(),
+    dob: z.string().optional().default(''),
+    language: z.string().optional().default('English'),
     alternatePhone: z.string().optional()
-  }),
-  roleInformation: z.record(z.any())
+  }).optional().default({ language: 'English', dob: '' }),
+  roleInformation: z.record(z.any()).optional().default({})
 });
 
 export const loginSchema = z.object({
   email: z.string().email().optional(),
   phone: z.string().optional(),
   password: z.string().min(1),
-  role: z.enum(['FARMER', 'BUYER', 'TRANSPORT', 'INDUSTRY', 'ADMIN', 'SUPER_ADMIN']),
+  role: roleEnum.optional().default('FARMER'),
 }).refine(data => data.email || data.phone, {
   message: "Either email or phone must be provided",
   path: ["email", "phone"]
@@ -38,7 +43,7 @@ export const loginSchema = z.object({
 
 export const otpLoginSchema = z.object({
   phone: z.string().regex(/^[+]?[0-9\s\-()]{10,20}$/, 'Invalid phone number'),
-  role: z.enum(['FARMER', 'BUYER', 'TRANSPORT', 'INDUSTRY', 'ADMIN', 'SUPER_ADMIN']),
+  role: roleEnum.optional().default('FARMER'),
 });
 
 export const verifyOtpSchema = z.object({

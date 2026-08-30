@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { ArrowUpRight, ArrowDownRight, Minus, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useRouter } from "next/navigation";
+import { useDashboardStore } from "@/stores/useDashboardStore";
 import api from "@/lib/api";
 
 interface StatItem {
@@ -18,11 +19,18 @@ interface StatItem {
 }
 
 export function HeroStatistics() {
-  const [stats, setStats] = useState<StatItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { statistics } = useDashboardStore();
+  const [stats, setStats] = useState<StatItem[]>(statistics || []);
+  const [loading, setLoading] = useState(!statistics || statistics.length === 0);
   const router = useRouter();
 
   useEffect(() => {
+    if (statistics && statistics.length > 0) {
+      setStats(statistics);
+      setLoading(false);
+      return;
+    }
+
     const fetchStats = async () => {
       try {
         const response = await api.get('/dashboard/stats');
@@ -35,7 +43,7 @@ export function HeroStatistics() {
     };
 
     fetchStats();
-  }, []);
+  }, [statistics]);
 
   if (loading) {
     return (

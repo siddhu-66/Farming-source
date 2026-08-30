@@ -26,10 +26,10 @@ export default function IndustryAnalytics() {
     try {
       setLoading(true);
       const [dashRes, kpiRes, forecastRes, alertsRes] = await Promise.all([
-        api.get('/api/analytics/dashboard'),
-        api.get('/api/analytics/kpis'),
-        api.get('/api/analytics/forecast'),
-        api.get('/api/analytics/alerts')
+        api.get('/analytics/dashboard'),
+        api.get('/analytics/kpis'),
+        api.get('/analytics/forecast'),
+        api.get('/analytics/alerts')
       ]);
       
       setDashboardData(dashRes.data.data);

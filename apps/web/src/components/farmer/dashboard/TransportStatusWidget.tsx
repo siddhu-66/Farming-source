@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/Button';
 export function TransportStatusWidget() {
   const [data, setData] = useState<any>(null);
   useEffect(() => {
-    api.get('/api/farmer/transport/active').then(res => setData(res.data.data)).catch(() => setData(null));
+    api.get('/farmer/transport/active').then(res => setData(res.data.data)).catch(() => setData(null));
   }, []);
 
   if (!data) return <Skeleton className="h-48 w-full" />;

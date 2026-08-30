@@ -17,12 +17,19 @@ export function ReviewAndSubmit({ onPrev }: { onPrev: () => void }) {
     const toastId = toast.loading('Submitting Registration...');
 
     try {
-      const { data: result } = await api.post('/v1/auth/register', data);
+      const { data: responseData } = await api.post('/v1/auth/register', data);
 
-      toast.success('Registration successful! Please verify your OTP.');
-      // Clear draft
-      reset();
-      router.push(`/verify-otp?email=${data.personalInfo.email}`);
+      toast.success('Registration successful! Please verify your SMS OTP.', { id: toastId });
+
+      // Navigate to OTP page with phone, masked phone and role in URL params BEFORE clearing store
+      const phone = encodeURIComponent(responseData?.data?.phone || data.personalInfo.phone);
+      const masked = encodeURIComponent(responseData?.data?.maskedPhone || '');
+      const role = encodeURIComponent(data.role || 'farmer');
+      router.push(`/verify-otp?phone=${phone}&masked=${masked}&role=${role}`);
+
+      // Clear draft AFTER navigation is initiated
+      // This prevents race condition where store clears before OTP page reads it
+      setTimeout(() => reset(), 100);
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Network error during registration', { id: toastId });
       setSubmitting(false);

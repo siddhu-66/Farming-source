@@ -23,8 +23,8 @@ export default function WalletDashboard() {
     const fetchWalletData = async () => {
       try {
         const [walletRes, txnsRes] = await Promise.all([
-          api.get('/api/wallet'),
-          api.get('/api/wallet/transactions')
+          api.get('/wallet'),
+          api.get('/wallet/transactions')
         ]);
         setWalletData(walletRes.data.data);
         setTransactions(txnsRes.data.data.transactions);

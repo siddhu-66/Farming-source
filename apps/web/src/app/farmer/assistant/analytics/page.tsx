@@ -32,7 +32,7 @@ export default function AIAnalytics() {
 
   const fetchAnalytics = async () => {
     try {
-      const res = await api.get('/api/v1/ai/analytics');
+      const res = await api.get('/ai/analytics');
       if (res.data?.success) {
         setStats(res.data.data);
       }

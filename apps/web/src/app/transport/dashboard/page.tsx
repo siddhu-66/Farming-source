@@ -16,7 +16,7 @@ export default function TransportDashboard() {
     const fetchDashboard = async () => {
       try {
         // We can use the existing analytics/dashboard endpoints
-        const res = await api.get('/api/transport/analytics');
+        const res = await api.get('/transport/analytics');
         if (res.data?.success) {
           setStats(res.data.data.overview);
         }

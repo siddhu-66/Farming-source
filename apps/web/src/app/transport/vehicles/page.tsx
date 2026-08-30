@@ -32,7 +32,7 @@ export default function TransportVehiclesPage() {
   const fetchVehicles = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/api/transport/vehicles');
+      const response = await api.get('/transport/vehicles');
       setVehicles(response.data.data?.vehicles || []);
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Failed to load vehicles');
@@ -49,7 +49,7 @@ export default function TransportVehiclesPage() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      await api.post('/api/transport/vehicles', {
+      await api.post('/transport/vehicles', {
         ...formData,
         capacity: Number(formData.capacity),
         year: Number(formData.year)

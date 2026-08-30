@@ -25,8 +25,8 @@ export default function LoansDashboard() {
     try {
       setLoading(true);
       const [loanRes, emiRes] = await Promise.all([
-        api.get('/api/v1/loans'),
-        api.get('/api/v1/finances/emi')
+        api.get('/loans'),
+        api.get('/finances/emi')
       ]);
       
       if (loanRes.data?.success && emiRes.data?.success) {
@@ -78,7 +78,7 @@ export default function LoansDashboard() {
 
   const handlePayEmi = async () => {
     try {
-      const res = await api.post('/api/v1/finances/emi/pay', { emiId: selectedEmi.id });
+      const res = await api.post('/finances/emi/pay', { emiId: selectedEmi.id });
       if (res.data?.success) {
         toast.success("EMI payment successful!");
         setPayModalOpen(false);

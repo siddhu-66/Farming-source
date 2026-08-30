@@ -22,7 +22,7 @@ export default function Benchmarking() {
 
   const fetchBenchmarks = async () => {
     try {
-      const res = await api.get('/api/v1/analytics/benchmark');
+      const res = await api.get('/analytics/benchmark');
       if (res.data?.success) {
         setBenchmarks(res.data.data.benchmarks);
       }

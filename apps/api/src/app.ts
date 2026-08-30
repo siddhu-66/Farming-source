@@ -34,7 +34,6 @@ import insuranceRoutes from './routes/insurance';
 import loansRoutes from './routes/loans';
 import financesRoutes from './routes/finances';
 import governmentRoutes from './routes/government';
-import notificationRoutes from './routes/notification';
 import schemeRoutes from './routes/scheme';
 import uploadRoutes from './routes/upload';
 import reviewsRoutes from './routes/reviews';
@@ -117,6 +116,7 @@ const v1Router = express.Router();
 v1Router.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 v1Router.use('/auth', authRoutes);
+v1Router.use('/v1/auth', authRoutes);
 v1Router.use('/farmer', farmerRoutes);
 v1Router.use('/farmer/assets', assetsRoutes);
 v1Router.use('/farmer/workers', workersRoutes);
@@ -128,7 +128,6 @@ v1Router.use('/industry', industryRoutes);
 v1Router.use('/admin', adminRoutes);
 v1Router.use('/admin/roles', rolesRoutes);
 v1Router.use('/admin/permissions', permissionsRoutes);
-v1Router.use('/auth', otpRoutes);
 v1Router.use('/admin/otp', otpRoutes);
 v1Router.use('/marketplace', marketplaceRoutes);
 v1Router.use('/government', governmentRoutes);
@@ -141,7 +140,6 @@ v1Router.use('/analytics', analyticsRoutes);
 v1Router.use('/weather', weatherRoutes);
 v1Router.use('/maps', mapsRoutes);
 v1Router.use('/chat', chatRoutes);
-v1Router.use('/notifications', notificationRoutes);
 v1Router.use('/schemes', schemeRoutes);
 v1Router.use('/upload', uploadRoutes);
 v1Router.use('/profile', profileRoutes);
@@ -155,8 +153,6 @@ v1Router.use('/verification', verificationRoutes);
 v1Router.use('/reviews', reviewsRoutes);
 v1Router.use('/orders', ordersRoutes);
 v1Router.use('/wallet', walletRoutes);
-v1Router.use('/insurance', insuranceRoutes);
-v1Router.use('/loans', loansRoutes);
 v1Router.use('/reports', reportsRoutes);
 v1Router.use('/admin/settings', settingsRoutes);
 v1Router.use('/security', securityRoutes);
@@ -170,6 +166,7 @@ v1Router.use('/calendar', calendarRoutes);
 
 app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1', v1Router);
+app.use('/v1', v1Router);
 
 // Fallback for old routes to point to V1 (temporary during migration)
 app.use('/api', v1Router);

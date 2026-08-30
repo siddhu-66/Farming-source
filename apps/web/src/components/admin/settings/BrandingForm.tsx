@@ -19,11 +19,11 @@ export default function BrandingForm({ initialData }: { initialData: any }) {
     try {
       setLoading(true);
       await Promise.all([
-        api.patch('/api/admin/settings/general', {
+        api.patch('/admin/settings/general', {
           platformName: formData.platformName,
           supportEmail: formData.supportEmail
         }),
-        api.patch('/api/admin/settings/branding', {
+        api.patch('/admin/settings/branding', {
           themeColor: formData.themeColor
         })
       ]);

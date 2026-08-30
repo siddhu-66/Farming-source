@@ -312,6 +312,102 @@ router.delete('/schemes/:id', async (req: AuthRequest, res: Response, next: Next
 });
 
 // ============================================
+// KNOWLEDGE BASE MANAGEMENT
+// ============================================
+
+import { ingestDocument } from '../services/rag.service';
+
+// GET /api/admin/knowledge
+router.get('/knowledge', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { page, limit, skip } = getPaginationParams(req.query);
+    const { category, language, status } = req.query;
+
+    let query = supabase.from('ai_documents').select('id, title, description, source, source_url, category, language, status, created_at, updated_at', { count: 'exact' });
+
+    if (category) query = query.eq('category', category);
+    if (language) query = query.eq('language', language);
+    if (status) query = query.eq('status', status);
+
+    query = query.order('created_at', { ascending: false }).range(skip, skip + limit - 1);
+
+    const { data: rawDocuments, count: total, error } = await query;
+    if (error) throw createApiError(500, error.message);
+
+    // Fetch chunk counts separately since Supabase doesn't support subqueries in select
+    const documentsWithChunks = await Promise.all((rawDocuments || []).map(async (doc) => {
+      const { count: chunkCount } = await supabase
+        .from('ai_document_chunks')
+        .select('*', { count: 'exact', head: true })
+        .eq('document_id', doc.id);
+      return { ...doc, chunks: chunkCount || 0 };
+    }));
+
+    res.json({
+      success: true,
+      data: mapKeys({
+        documents: documentsWithChunks,
+        ...buildPaginationResponse(total || 0, page, limit)
+      })
+    });
+  } catch (err) { next(err); }
+});
+
+// POST /api/admin/knowledge
+router.post('/knowledge', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const schema = z.object({
+      title: z.string().min(3),
+      description: z.string().optional(),
+      source: z.string().optional(),
+      sourceUrl: z.string().url().optional(),
+      category: z.string().optional(),
+      language: z.string().default('en'),
+      content: z.string().min(10),
+    });
+
+    const data = schema.parse(req.body);
+
+    const documentId = await ingestDocument({
+      title: data.title,
+      description: data.description,
+      source: data.source,
+      source_url: data.sourceUrl,
+      category: data.category,
+      language: data.language,
+      content: data.content,
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Knowledge document ingested successfully',
+      data: { id: documentId }
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError) next(createApiError(422, err.errors[0].message));
+    else next(err);
+  }
+});
+
+// DELETE /api/admin/knowledge/:id
+router.delete('/knowledge/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { error } = await supabase.from('ai_documents').delete().eq('id', req.params.id);
+    if (error) throw createApiError(500, error.message);
+
+    await supabase.from('audit_logs').insert([{
+      user_id: req.user!.id,
+      action: 'delete_knowledge_document',
+      entity: 'AIDocument',
+      entity_id: req.params.id,
+      metadata: { ip_address: req.ip || 'unknown', user_agent: req.headers['user-agent'] },
+    }]);
+
+    res.json({ success: true, message: 'Knowledge document deleted' });
+  } catch (err) { next(err); }
+});
+
+// ============================================
 // AUDIT LOGS
 // ============================================
 // SECURITY EVENTS (Admin)

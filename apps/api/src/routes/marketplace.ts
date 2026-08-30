@@ -164,6 +164,34 @@ router.get('/buyers', async (req: AuthRequest, res: Response, next: NextFunction
   } catch (err) { next(err); }
 });
 
+// GET /api/marketplace/saved
+router.get('/saved', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { data: saved, error } = await supabase
+      .from('saved_listings')
+      .select('*, listing:listings(*, farmer_id:users!listings_seller_id_fkey(full_name, avatar_url, verified))')
+      .eq('user_id', req.user!.id)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.json({ success: true, data: { savedListings: toCamel(saved) } });
+  } catch (err) { next(err); }
+});
+
+// GET /api/marketplace/saves
+router.get('/saves', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { data: saved, error } = await supabase
+      .from('saved_listings')
+      .select('*, listing:listings(*, farmer_id:users!listings_seller_id_fkey(full_name, avatar_url, verified))')
+      .eq('user_id', req.user!.id)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.json({ success: true, data: { savedListings: toCamel(saved) } });
+  } catch (err) { next(err); }
+});
+
 // POST /api/marketplace/save
 router.post('/save', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {

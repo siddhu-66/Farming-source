@@ -28,7 +28,7 @@ export default function SchemeDetails() {
   const fetchSchemeDetails = async () => {
     try {
       setLoading(true);
-      const res = await api.get(`/api/v1/government/schemes/${params.id}`);
+      const res = await api.get(`/government/schemes/${params.id}`);
       if (res.data?.success) {
         setScheme(res.data.data.scheme);
       }
@@ -54,7 +54,7 @@ export default function SchemeDetails() {
   const handleCheckEligibility = async () => {
     setEligibilityCheck('checking');
     try {
-      const res = await api.post('/api/v1/government/eligibility', { schemeId: params.id });
+      const res = await api.post('/government/eligibility', { schemeId: params.id });
       if (res.data?.success) {
         // Simulate delay for AI thinking effect
         setTimeout(() => {
@@ -70,7 +70,7 @@ export default function SchemeDetails() {
 
   const handleSubmitApplication = async () => {
     try {
-      const res = await api.post('/api/v1/government/applications', {
+      const res = await api.post('/government/applications', {
         schemeId: params.id,
         submittedDocuments: scheme.requiredDocuments
       });

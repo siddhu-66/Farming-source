@@ -16,7 +16,7 @@ export default function MarketplaceDashboard() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const res = await api.get('/farmer/listings/analytics');
+        const res = await api.get('/api/farmer/listings/analytics');
         if (res.data?.success) {
           setStats(res.data.data);
         }

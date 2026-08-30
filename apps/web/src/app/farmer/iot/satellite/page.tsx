@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Satellite, ArrowLeft, Image as ImageIcon, CheckCircle2, CloudFog, Loader2 } from "lucide-react";
+import { Satellite, ArrowLeft, Image as ImageIcon, CheckCircle2, CloudFog, Loader2, AlertCircle, TrendingUp } from "lucide-react";
+import toast from "react-hot-toast";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useRouter } from "next/navigation";
@@ -11,7 +12,9 @@ import api from "@/lib/api";
 export default function SatelliteMonitoring() {
   const router = useRouter();
   const [ndvi, setNdvi] = useState<any>(null);
+  const [predictions, setPredictions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -19,12 +22,22 @@ export default function SatelliteMonitoring() {
 
   const fetchData = async () => {
     try {
-      const res = await api.get('/api/v1/iot/satellite/ndvi');
-      if (res.data?.success) {
-        setNdvi(res.data.data);
+      setLoading(true);
+      setError(null);
+      const [ndviRes, predictionsRes] = await Promise.all([
+        api.get('/api/v1/iot/satellite/ndvi'),
+        api.get('/api/v1/iot/predictions')
+      ]);
+
+      if (ndviRes.data?.success) {
+        setNdvi(ndviRes.data.data);
       }
-    } catch (err) {
+      if (predictionsRes.data?.success) {
+        setPredictions(predictionsRes.data.data.predictions || []);
+      }
+    } catch (err: any) {
       console.error("Failed to fetch satellite data", err);
+      setError(err.response?.data?.message || "Failed to load satellite data");
     } finally {
       setLoading(false);
     }
@@ -32,6 +45,30 @@ export default function SatelliteMonitoring() {
 
   if (loading) {
     return <div className="flex h-[50vh] items-center justify-center"><Loader2 className="w-10 h-10 animate-spin text-blue-500" /></div>;
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto space-y-8 pb-24">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => router.back()}>
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold text-slate-800">Satellite Monitoring</h1>
+            <p className="text-muted-foreground">Normalized Difference Vegetation Index (NDVI) & Crop Health Imagery.</p>
+          </div>
+        </div>
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="p-8 text-center">
+            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <h3 className="font-bold text-red-800 mb-2">Failed to Load Satellite Data</h3>
+            <p className="text-red-600 text-sm mb-4">{error}</p>
+            <Button onClick={fetchData} variant="outline">Retry</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (
@@ -128,6 +165,40 @@ export default function SatelliteMonitoring() {
               </div>
             </CardContent>
           </Card>
+
+          {predictions.length > 0 && (
+            <Card className="border-t-4 border-t-purple-500">
+              <CardContent className="p-6">
+                <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4">
+                  <TrendingUp className="w-5 h-5 text-purple-600" /> AI Predictions
+                </h3>
+                <div className="space-y-3">
+                  {predictions.map((pred) => (
+                    <div key={pred.id} className="p-3 bg-slate-50 rounded-xl border">
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className="text-sm font-bold text-slate-800 capitalize">
+                          {pred.predictionType.replace(/_/g, ' ')}
+                        </h4>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                          pred.riskLevel === 'low' ? 'bg-green-100 text-green-700' :
+                          pred.riskLevel === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                          'bg-red-100 text-red-700'
+                        }`}>
+                          {pred.riskLevel}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600">
+                        {Object.values(pred.details).join(' • ')}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-2">
+                        Confidence: {(pred.confidenceScore * 100).toFixed(0)}%
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
         </div>
       </div>

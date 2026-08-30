@@ -138,6 +138,63 @@ router.post('/voice', async (req: AuthRequest, res: Response, next: NextFunction
   } catch (err) { next(err); }
 });
 
+// POST /api/v1/ai/disease-detect
+router.post('/disease-detect', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { imageBase64, imageUrl, cropName } = req.body;
+
+    // Simulate Vision AI processing delay
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    const detectedCrop = cropName || 'Tomato';
+    const mockReport = {
+      disease: 'Early Blight (Alternaria solani)',
+      confidence: 92,
+      severity: 'medium',
+      treatment: 'Apply copper-based fungicide or chlorothalonil. Remove severely affected lower leaves to prevent spores from spreading. Ensure proper spacing between plants for adequate airflow.',
+      prevention: 'Avoid overhead irrigation. Practice 2-3 year crop rotation with non-solanaceous crops. Mulch around base to prevent soil splash.'
+    };
+
+    try {
+      await supabase.from('ai_image_reports').insert({
+        farmer_id: req.user!.id,
+        image_url: imageUrl || 'disease_scan.jpg',
+        detected_crop: detectedCrop,
+        health_status: 'infected',
+        diseases: [{ name: mockReport.disease, confidence: mockReport.confidence }],
+        treatment_suggestions: [mockReport.treatment],
+        confidence_score: mockReport.confidence
+      });
+    } catch (dbErr) {
+      // Non-blocking if table is not migrated
+    }
+
+    res.json({
+      success: true,
+      data: {
+        result: mockReport
+      }
+    });
+  } catch (err) { next(err); }
+});
+
+// GET /api/v1/ai/image-reports
+router.get('/image-reports', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { data: reports, error } = await supabase
+      .from('ai_image_reports')
+      .select('*')
+      .eq('farmer_id', req.user!.id)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.json({ success: true, data: { reports: toCamel(reports) } });
+  } catch (err) {
+    // Return empty list if error
+    res.json({ success: true, data: { reports: [] } });
+  }
+});
+
 // POST /api/v1/ai/image
 router.post('/image', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {

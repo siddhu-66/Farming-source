@@ -21,7 +21,7 @@ export default function PlatformSettings() {
   const fetchSettings = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/api/admin/settings');
+      const res = await api.get('/admin/settings');
       setSettingsData(res.data.data.settings);
     } catch (e) {
       toast.error('Failed to load system settings');

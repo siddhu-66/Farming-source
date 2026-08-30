@@ -50,7 +50,7 @@ export default function FarmerOrdersPage() {
       const params: any = { limit: 50 };
       if (activeTab !== 'all') params.status = activeTab;
 
-      const res = await api.get('/api/orders', { params });
+      const res = await api.get('/orders', { params });
       if (res.data.success) {
         const fetchedOrders = res.data.data.orders || [];
         setOrders(fetchedOrders);
@@ -86,7 +86,7 @@ export default function FarmerOrdersPage() {
 
   const handleConfirm = async (id: string) => {
     try {
-      const res = await api.patch(`/api/orders/${id}/confirm`);
+      const res = await api.patch(`/orders/${id}/confirm`);
       if (res.data.success) {
         toast.success('Order confirmed!');
         setOrders(orders.map(o => o.id === id ? { ...o, status: 'confirmed' } : o));
@@ -100,7 +100,7 @@ export default function FarmerOrdersPage() {
     const reason = prompt('Please enter a reason for cancellation/rejection:');
     if (!reason) return;
     try {
-      const res = await api.patch(`/api/orders/${id}/cancel`, { reason });
+      const res = await api.patch(`/orders/${id}/cancel`, { reason });
       if (res.data.success) {
         toast.success('Order rejected/cancelled');
         setOrders(orders.map(o => o.id === id ? { ...o, status: 'cancelled' } : o));

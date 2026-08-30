@@ -40,7 +40,7 @@ export default function MarketplacePage() {
         ...(priceRange[1] < 1000 && { maxPrice: priceRange[1].toString() }),
       });
 
-      const response = await api.get(`/api/marketplace?${queryParams.toString()}`);
+      const response = await api.get(`/marketplace?${queryParams.toString()}`);
       const data = response.data.data.listings || [];
       
       if (append) {
@@ -92,7 +92,7 @@ export default function MarketplacePage() {
 
   const handleSave = async (id: string) => {
     try {
-      await api.post('/api/marketplace/save', { listingId: id });
+      await api.post('/marketplace/save', { listingId: id });
       toast.success('Listing saved');
     } catch {
       toast.error('Failed to save listing');

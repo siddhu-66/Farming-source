@@ -21,7 +21,7 @@ export default function AssistantSettings() {
   const handleTranslateTest = async () => {
     setTranslating(true);
     try {
-      const res = await api.post('/api/v1/ai/translate', {
+      const res = await api.post('/ai/translate', {
         text: testText,
         targetLang: targetLang
       });
