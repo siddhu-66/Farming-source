@@ -162,8 +162,8 @@ export const verifyOtp = async (req: Request, res: Response, next: NextFunction)
 export const resendOtp = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { phone } = resendOtpSchema.parse(req.body);
-    await authService.resendOTP(phone);
-    res.json(formatSuccess('OTP resent successfully'));
+    const result = await authService.resendOTP(phone);
+    res.json(formatSuccess('OTP resent successfully', result));
   } catch (error: any) {
     if (error.name === 'ZodError') {
       next(new ValidationError('Invalid input data', error.errors));

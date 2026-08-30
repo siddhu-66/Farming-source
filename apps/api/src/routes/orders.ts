@@ -45,7 +45,7 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
     });
     const { listingId, quantity } = schema.parse(req.body);
     const userId = req.user!.id;
-    const userRole = req.user!.role;
+    const userRole = (req.user!.role || '').toLowerCase();
 
     // Fetch listing to verify stock
     const { data: listing, error: listingErr } = await supabase
@@ -67,10 +67,10 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
     let industryRecordId = null;
     if (userRole === 'buyer') {
       const { data: buyer } = await supabase.from('buyers').select('id').eq('user_id', userId).single();
-      buyerRecordId = buyer?.id;
+      buyerRecordId = buyer?.id || userId;
     } else if (userRole === 'industry') {
       const { data: industry } = await supabase.from('industries').select('id').eq('user_id', userId).single();
-      industryRecordId = industry?.id;
+      industryRecordId = industry?.id || userId;
     }
 
     if (!buyerRecordId && !industryRecordId) {
@@ -127,7 +127,7 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
     const { page, limit, skip } = getPaginationParams(req.query);
     const { status } = req.query;
     const userId = req.user!.id;
-    const role = req.user!.role;
+    const role = (req.user!.role || '').toLowerCase();
 
     let query = supabase.from('orders').select('*, listing:listings(crop_name, images, price_per_unit, unit)', { count: 'exact' });
 
@@ -220,7 +220,7 @@ router.patch('/:id/cancel', async (req: AuthRequest, res: Response, next: NextFu
   try {
     const { reason } = req.body;
     const userId = req.user!.id;
-    const role = req.user!.role;
+    const role = (req.user!.role || '').toLowerCase();
     
     const { data: order, error: orderErr } = await supabase.from('orders').select('*').eq('id', req.params.id).single();
     if (orderErr || !order) throw createApiError(404, 'Order not found');

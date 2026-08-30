@@ -10,9 +10,20 @@ export const authorizeRole = (...roles: string[]) => {
       return next(createApiError(401, 'Authentication required'));
     }
 
-    if (!roles.includes(req.user.role)) {
+    const userRole = (req.user.role || '').toUpperCase();
+    const allowedRoles = roles.map(r => r.toUpperCase());
+
+    // Support transport/transporter alias
+    if (allowedRoles.includes('TRANSPORT') && !allowedRoles.includes('TRANSPORTER')) {
+      allowedRoles.push('TRANSPORTER');
+    }
+    if (allowedRoles.includes('TRANSPORTER') && !allowedRoles.includes('TRANSPORT')) {
+      allowedRoles.push('TRANSPORT');
+    }
+
+    if (!allowedRoles.includes(userRole)) {
       logger.warn(`Unauthorized access attempt by ${req.user.email} (${req.user.role}) to ${req.path}`);
-      
+
       // Log to audit_logs
       supabase.from('audit_logs').insert([{
         user_id: req.user.id,
@@ -20,7 +31,7 @@ export const authorizeRole = (...roles: string[]) => {
         entity: 'Route',
         entity_id: req.path,
         metadata: { ip_address: req.ip, user_agent: req.headers['user-agent'] }
-      }]).then();
+      }]).then(() => {}, () => {});
 
       return next(createApiError(403, 'You do not have permission to perform this action.'));
     }

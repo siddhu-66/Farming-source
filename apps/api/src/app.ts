@@ -115,6 +115,7 @@ const v1Router = express.Router();
 // Swagger Documentation
 v1Router.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
+v1Router.use('/health', healthRoutes);
 v1Router.use('/auth', authRoutes);
 v1Router.use('/v1/auth', authRoutes);
 v1Router.use('/farmer', farmerRoutes);
