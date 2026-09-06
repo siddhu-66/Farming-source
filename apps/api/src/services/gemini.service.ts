@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { z } from 'zod';
 
 const apiKey = process.env.GEMINI_API_KEY;
 if (!apiKey) console.error('Missing GEMINI_API_KEY environment variable');
@@ -33,9 +34,33 @@ export const transcribeAudio = async (input: MultimodalInput, language = 'en') =
     `Transcribe this farmer voice recording verbatim and detect its language. Return JSON only: {"transcript":"...","language":"en|hi|gu|mr|te|ta|kn|bn|pa|ml","confidence":0-100}. Language hint: ${language}.`,
     { inlineData: { data: input.data, mimeType: input.mimeType } },
   ]);
-  const parsed = parseObject<{ transcript: string; language: string; confidence: number }>(result.response.text());
-  if (!parsed?.transcript) throw new Error('Gemini could not transcribe the audio');
-  return parsed;
+  const parsed = z.object({ transcript: z.string().min(1), language: z.string().min(2), confidence: z.number().min(0).max(100) }).safeParse(parseObject<unknown>(result.response.text()));
+  if (!parsed.success) throw new Error('Gemini returned an invalid transcription result');
+  return parsed.data;
+};
+
+const diseaseSchema = z.object({
+  disease: z.string().min(1),
+  confidence: z.number().min(0).max(100),
+  description: z.string().default(''),
+  severity: z.enum(['low', 'medium', 'high', 'none', 'unknown']).default('unknown'),
+  treatment: z.array(z.string()).default([]),
+  prevention: z.array(z.string()).default([]),
+  organicTreatment: z.array(z.string()).default([]),
+  estimatedYieldImpact: z.string().default('unknown'),
+});
+
+export const detectCropDisease = async (imageBase64: string, cropName?: string): Promise<z.infer<typeof diseaseSchema>> => {
+  const prompt = `Analyze this crop/plant image for visible disease, pest damage, or nutrient deficiency. ${cropName ? `The farmer identifies the crop as ${cropName}.` : ''}\nReturn JSON only with disease, confidence (0-100), description, severity (low|medium|high|none|unknown), treatment (cultural/IPM steps only), prevention, organicTreatment, and estimatedYieldImpact. Do not invent chemical pesticide dosages. If the image is insufficient for a reliable diagnosis, use disease=Unable to determine, confidence=0, severity=unknown, and explain why.`;
+  try {
+    const result = await getGeminiModel().generateContent([prompt, { inlineData: { data: imageBase64, mimeType: 'image/jpeg' } }]);
+    const parsed = diseaseSchema.safeParse(parseObject<unknown>(result.response.text()));
+    if (!parsed.success) throw new Error('Gemini returned an invalid disease detection result');
+    return parsed.data;
+  } catch (error) {
+    console.error('Gemini disease detection error:', error);
+    throw new Error('Failed to analyze crop image');
+  }
 };
 
 export const analyzeDocument = async (input: MultimodalInput, documentType = 'unknown') => {
@@ -43,9 +68,9 @@ export const analyzeDocument = async (input: MultimodalInput, documentType = 'un
     `Read this agricultural document accurately. Never invent unreadable values. Type: ${documentType}. Return JSON only: {"documentType":"...","language":"...","extractedText":"verbatim","fields":{},"tables":[],"confidence":0-100,"unreadableSections":[],"needsManualReview":true|false}. Preserve scripts, numbers, units, NPK, pH and identifiers exactly as visible.`,
     { inlineData: { data: input.data, mimeType: input.mimeType } },
   ]);
-  const parsed = parseObject<{ documentType: string; language: string; extractedText: string; fields: Record<string, unknown>; tables: unknown[]; confidence: number; unreadableSections: string[]; needsManualReview: boolean }>(result.response.text());
-  if (!parsed) throw new Error('Gemini returned an invalid OCR result');
-  return parsed;
+  const parsed = z.object({ documentType: z.string().min(1), language: z.string().min(2), extractedText: z.string(), fields: z.record(z.unknown()), tables: z.array(z.unknown()), confidence: z.number().min(0).max(100), unreadableSections: z.array(z.string()), needsManualReview: z.boolean() }).safeParse(parseObject<unknown>(result.response.text()));
+  if (!parsed.success) throw new Error('Gemini returned an invalid OCR result');
+  return parsed.data;
 };
 
 export const translateText = async (text: string, targetLang: string, sourceLang = 'auto') => {
