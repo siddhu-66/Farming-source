@@ -34,7 +34,7 @@ const generateRefreshToken = (user: any): string => {
 export const mapUserToCamelCase = (user: any) => {
   if (!user) return user;
   const mapped = { ...user };
-  const keyMap: Record<string, string> = { public_id: 'publicId', full_name: 'fullName', phone: 'phone', password_hash: 'passwordHash', status: 'accountStatus', is_email_verified: 'isEmailVerified', is_mobile_verified: 'isMobileVerified', profile_completed: 'profileCompleted', profile_photo: 'profilePhoto', preferred_language: 'preferredLanguage', last_login: 'lastLoginAt', last_password_changed_at: 'lastPasswordChangedAt', account_locked_until: 'accountLockedUntil', is_deleted: 'isDeleted', deleted_at: 'deletedAt', deleted_by: 'deletedBy', created_by: 'createdBy', updated_by: 'updatedBy', created_at: 'createdAt', updated_at: 'updatedAt' };
+  const keyMap: Record<string, string> = { public_id: 'publicId', full_name: 'fullName', phone: 'phone', password_hash: 'passwordHash', status: 'accountStatus', is_email_verified: 'isEmailVerified', is_mobile_verified: 'isMobileVerified', is_phone_verified: 'isPhoneVerified', profile_completed: 'profileCompleted', profile_photo: 'profilePhoto', preferred_language: 'preferredLanguage', last_login: 'lastLoginAt', last_password_changed_at: 'lastPasswordChangedAt', account_locked_until: 'accountLockedUntil', is_deleted: 'isDeleted', deleted_at: 'deletedAt', deleted_by: 'deletedBy', created_by: 'createdBy', updated_by: 'updatedBy', created_at: 'createdAt', updated_at: 'updatedAt' };
   for (const [snake, camel] of Object.entries(keyMap)) if (snake in mapped) { mapped[camel] = mapped[snake]; delete mapped[snake]; }
   return mapped;
 };
@@ -155,12 +155,12 @@ export const refreshTokens = async (refreshToken: string, requestMeta: any = {})
   let decoded: any;
   try { decoded = jwt.verify(refreshToken, secret, { algorithms: ['HS256'] }); } catch { throw new AuthenticationError('Invalid or expired refresh token'); }
   if (!decoded?.userId || !decoded?.jti || !decoded?.raw) throw new AuthenticationError('Invalid refresh token claims');
-  const rotated = await require('../repositories/refresh_tokens.repository').default.rotateToken(decoded.raw, requestMeta);
+  const rotated = await require('../repositories/refresh_tokens.repository').default.rotateToken(decoded.userId, decoded.jti, decoded.raw, requestMeta);
   if (!rotated?.userId || rotated.userId !== decoded.userId) throw new AuthenticationError('Refresh token is no longer valid');
   const user = await authRepo.getUserById(decoded.userId);
   if (!user || user.is_deleted || user.status !== 'ACTIVE') throw new AuthenticationError('Account is no longer active');
-  const sessionId = rotated.sessionId;
-  const accessToken = generateAccessToken(user, sessionId, rotated.deviceId);
+  const sessionId = rotated.record?.session_id;
+  const accessToken = generateAccessToken(user, sessionId, rotated.record?.device_id);
   const nextRefresh = jwt.sign({ userId: user.id.toString(), jti: rotated.jwtId, raw: rotated.rawToken }, secret, { expiresIn: (process.env.JWT_REFRESH_EXPIRES_IN || '30d') as any });
   return { user: mapUserToCamelCase(user), accessToken, refreshToken: nextRefresh };
 };
