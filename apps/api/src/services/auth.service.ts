@@ -57,7 +57,32 @@ export const checkUserAvailability = async (email?: string, phone?: string) => {
   return { available, emailAvailable, phoneAvailable, emailMessage, phoneMessage, message };
 };
 
-export const saveRegistrationDraft = async (draftData: any) => { logger.info(`Saved registration draft for role: ${draftData.role}`); return true; };
+export const saveRegistrationDraft = async (draftData: any) => {
+  if (!draftData || typeof draftData !== 'object' || Array.isArray(draftData)) {
+    throw new BusinessRuleError('Invalid registration draft');
+  }
+  const role = typeof draftData.role === 'string' ? draftData.role.toUpperCase() : '';
+  if (!role) throw new BusinessRuleError('Registration role is required');
+
+  // Registration passwords must never be persisted in plaintext, including in a draft.
+  const payload = JSON.parse(JSON.stringify(draftData));
+  if (payload.account && typeof payload.account === 'object') {
+    delete payload.account.password;
+    delete payload.account.passwordHash;
+    delete payload.account.password_hash;
+  }
+
+  const { data, error } = await supabase
+    .from('registration_drafts')
+    .insert({ role, payload })
+    .select('id, role, expires_at, created_at, updated_at')
+    .single();
+  if (error) {
+    logger.error('Failed to persist registration draft', { error: error.message, code: error.code });
+    throw new DatabaseError('Unable to save registration draft');
+  }
+  return data;
+};
 
 export const registerUser = async (data: any, requestMeta: any = {}) => {
   const pInfo = data.personalInfo || {};
