@@ -20,7 +20,7 @@ export const registerSchema = z.object({
   account: z.object({
     username: z.string().optional().default(''),
     password: z.string().min(6),
-  }).optional().default({ username: '', password: 'SecurePassword123!' }),
+  }),
   profile: z.object({
     profilePhoto: z.string().optional(),
     gender: z.string().optional(),
