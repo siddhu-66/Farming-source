@@ -18,25 +18,22 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm' # Using npm cache to speed up pnpm installation
-
-      - name: Install pnpm
-        run: npm install -g pnpm
+          cache: 'npm'
 
       - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
       - name: Run Linter
-        run: pnpm run lint
+        run: npm run lint
 
       - name: Run Type Check
-        run: pnpm run type-check
+        run: npm run type-check
 
       - name: Run Unit Tests
-        run: pnpm run test
+        run: npm run test --workspaces --if-present
 
       - name: Security Scan
-        run: pnpm audit --audit-level=high
+        run: npm audit --audit-level=high
 
   build-and-push:
     name: Build & Push Docker Images
