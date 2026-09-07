@@ -1,343 +1,39 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Response, NextFunction } from 'express';
 import { authenticate, AuthRequest } from '../middleware';
 import { supabase } from '../config/supabase';
+import { ingestDocument, searchKnowledge } from '../services/rag.service';
+import { analyzeDocument, detectCropDisease, generateGroundedResponse, transcribeAudio, translateText } from '../services/gemini.service';
 import { createApiError } from '../middleware';
 
 const router = Router();
 router.use(authenticate);
+const requireText = (value: unknown, field: string): string => { if (typeof value !== 'string' || !value.trim()) throw createApiError(400, `${field} is required`); return value.trim(); };
+const parseDataUrl = (value: string) => { const match = value.match(/^data:([^;]+);base64,(.+)$/); return match ? { mimeType: match[1], data: match[2] } : { mimeType: 'image/jpeg', data: value }; };
+const toCamel = (obj: unknown): unknown => Array.isArray(obj) ? obj.map(toCamel) : obj && typeof obj === 'object' && !(obj instanceof Date) ? Object.entries(obj).reduce<Record<string, unknown>>((r,[k,v]) => { r[k.replace(/_([a-z])/g, (_,c:string)=>c.toUpperCase())]=toCamel(v); return r; }, {}) : obj;
 
-const toCamel = (obj: any): any => {
-  if (Array.isArray(obj)) return obj.map(v => toCamel(v));
-  if (obj !== null && obj !== undefined && typeof obj === 'object' && !(obj instanceof Date)) {
-    return Object.keys(obj).reduce((result, key) => {
-      const camelKey = key.replace(/_([a-z])/g, g => g[1].toUpperCase());
-      result[camelKey] = toCamel(obj[key]);
-      return result;
-    }, {} as any);
-  }
-  return obj;
-};
+router.get('/history', async (req: AuthRequest,res: Response,next: NextFunction)=>{ try { const {data,error}=await supabase.from('ai_conversations').select('*, ai_messages(*)').eq('farmer_id',req.user!.id).order('updated_at',{ascending:false}); if(error) throw error; res.json({success:true,data:{conversations:toCamel(data)}}); } catch(e){next(e);} });
 
-// GET /api/v1/ai/history
-router.get('/history', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const { data: conversations, error } = await supabase
-      .from('ai_conversations')
-      .select('*, ai_messages(*)')
-      .eq('farmer_id', req.user!.id)
-      .order('updated_at', { ascending: false });
-    
-    if (error) throw error;
-    res.json({ success: true, data: { conversations: toCamel(conversations) } });
-  } catch (err) { next(err); }
-});
+router.post('/chat', async (req: AuthRequest,res: Response,next: NextFunction)=>{ try {
+  const message=requireText(req.body.message,'message'); const language=typeof req.body.language==='string'?req.body.language:'en'; let convId=req.body.conversationId as string|undefined;
+  if(!convId){ const {data,error}=await supabase.from('ai_conversations').insert({farmer_id:req.user!.id,title:`${message.substring(0,30)}...`,language}).select().single(); if(error) throw error; convId=data.id; }
+  else { const {data,error}=await supabase.from('ai_conversations').select('id').eq('id',convId).eq('farmer_id',req.user!.id).single(); if(error||!data) throw createApiError(404,'Conversation not found'); await supabase.from('ai_conversations').update({updated_at:new Date().toISOString()}).eq('id',convId).eq('farmer_id',req.user!.id); }
+  await supabase.from('ai_messages').insert({conversation_id:convId,farmer_id:req.user!.id,role:'user',content:message});
+  const {data:farmerData}=await supabase.from('farmers').select('*').eq('id',req.user!.id).single(); const rag=await searchKnowledge(message,0.7,3); const context=rag.map(r=>`[Source: ${r.ai_documents.title}]\n${r.chunk_text}`).join('\n\n'); const sources=rag.map(r=>({title:r.ai_documents.title,source:r.ai_documents.source,url:r.ai_documents.source_url}));
+  const text=await generateGroundedResponse({prompt:message,context,language,farmerContext:farmerData}); const finalResponse={text,sources:sources.length?sources:null}; const {data:msg,error}=await supabase.from('ai_messages').insert({conversation_id:convId,farmer_id:req.user!.id,role:'assistant',content:JSON.stringify(finalResponse)}).select().single(); if(error) throw error;
+  res.json({success:true,data:{message:toCamel(msg),conversationId:convId,sources}});
+} catch(e){next(e);} });
 
-import { generateGroundedResponse } from '../services/gemini.service';
-import { searchKnowledge, ingestDocument } from '../services/rag.service';
+router.post('/voice', async (req: AuthRequest,res: Response,next: NextFunction)=>{ try { const audio=requireText(req.body.audioBase64,'audioBase64'); const input=parseDataUrl(audio); const language=typeof req.body.language==='string'?req.body.language:'en'; const stt=await transcribeAudio({data:input.data,mimeType:req.body.mimeType||input.mimeType},language); const rag=await searchKnowledge(stt.transcript,0.7,3); const context=rag.map(r=>`[Source: ${r.ai_documents.title}]\n${r.chunk_text}`).join('\n\n'); const response=await generateGroundedResponse({prompt:stt.transcript,context,language:stt.language||language}); res.json({success:true,data:{transcript:stt.transcript,detectedLanguage:stt.language,transcriptionConfidence:stt.confidence,response,sources:rag.map(r=>({title:r.ai_documents.title,source:r.ai_documents.source,url:r.ai_documents.source_url}))}}); } catch(e){next(e);} });
 
-// POST /api/v1/ai/chat
-router.post('/chat', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const { message, conversationId, language = 'en' } = req.body;
-    
-    let convId = conversationId;
-    
-    if (!convId) {
-      const { data: conv, error: convErr } = await supabase
-        .from('ai_conversations')
-        .insert({
-          farmer_id: req.user!.id,
-          title: message.substring(0, 30) + '...',
-          language
-        })
-        .select()
-        .single();
-      
-      if (convErr) throw convErr;
-      convId = conv.id;
-    } else {
-      await supabase.from('ai_conversations').update({ updated_at: new Date().toISOString() }).eq('id', convId);
-    }
+router.post('/disease-detect', async (req: AuthRequest,res: Response,next: NextFunction)=>{ try { const image=requireText(req.body.imageBase64,'imageBase64'); const input=parseDataUrl(image); const result=await detectCropDisease(input.data,typeof req.body.cropName==='string'?req.body.cropName:undefined); const confidence=typeof (result as any).confidence==='number'?(result as any).confidence:0; const disease=typeof (result as any).disease==='string'?(result as any).disease:'Unable to detect'; const healthStatus=disease.toLowerCase()==='healthy'?'healthy':confidence===0?'unknown':'infected'; const {data:report,error}=await supabase.from('ai_image_reports').insert({farmer_id:req.user!.id,image_url:req.body.imageUrl||null,detected_crop:req.body.cropName||null,health_status:healthStatus,diseases:[{name:disease,confidence}],treatment_suggestions:(result as any).treatment||[],prevention_measures:(result as any).prevention||[],confidence_score:confidence}).select().single(); if(error) throw error; res.json({success:true,data:{result,report:toCamel(report)}}); } catch(e){next(e);} });
 
-    await supabase.from('ai_messages').insert({
-      conversation_id: convId,
-      farmer_id: req.user!.id,
-      role: 'user',
-      content: message
-    });
+router.get('/image-reports', async (req: AuthRequest,res: Response,next: NextFunction)=>{ try { const {data,error}=await supabase.from('ai_image_reports').select('*').eq('farmer_id',req.user!.id).order('created_at',{ascending:false}); if(error) throw error; res.json({success:true,data:{reports:toCamel(data)}}); } catch(e){next(e);} });
+router.post('/image', async (req: AuthRequest,res: Response,next: NextFunction)=>{ try { const image=requireText(req.body.imageBase64,'imageBase64'); const result=await detectCropDisease(parseDataUrl(image).data,typeof req.body.cropType==='string'?req.body.cropType:undefined); res.json({success:true,data:{report:result}}); } catch(e){next(e);} });
 
-    // 1. Fetch Farmer Context
-    const { data: farmerData } = await supabase.from('farmers').select('*').eq('id', req.user!.id).single();
+router.post('/document/ocr', async (req: AuthRequest,res: Response,next: NextFunction)=>{ try { const doc=requireText(req.body.documentBase64,'documentBase64'); const input=parseDataUrl(doc); const type=typeof req.body.documentType==='string'?req.body.documentType:'unknown'; const result=await analyzeDocument({data:input.data,mimeType:req.body.mimeType||input.mimeType},type); const {data:stored,error}=await supabase.from('ai_ocr_documents').insert({farmer_id:req.user!.id,document_url:req.body.documentUrl||'inline-upload',document_type:result.documentType||type,extracted_data:result,confidence_score:result.confidence,status:result.needsManualReview?'needs_review':'completed'}).select().single(); if(error) throw error; res.json({success:true,data:{document:toCamel(stored),extraction:result}}); } catch(e){next(e);} });
 
-    // 2. Perform RAG Retrieval
-    const ragResults = await searchKnowledge(message, 0.7, 3);
-    let contextString = '';
-    const sources: any[] = [];
-    
-    if (ragResults && ragResults.length > 0) {
-      ragResults.forEach(r => {
-        contextString += `[Source: ${r.ai_documents.title}]\n${r.chunk_text}\n\n`;
-        sources.push({
-          title: r.ai_documents.title,
-          source: r.ai_documents.source,
-          url: r.ai_documents.source_url
-        });
-      });
-    }
-
-    // 3. Generate Grounded AI Response
-    const aiResponseText = await generateGroundedResponse({
-      prompt: message,
-      context: contextString,
-      language,
-      farmerContext: farmerData
-    });
-
-    // Format response JSON with sources if any
-    const finalResponse = {
-      text: aiResponseText,
-      sources: sources.length > 0 ? sources : null
-    };
-
-    const { data: aiMsg, error: aiErr } = await supabase.from('ai_messages').insert({
-      conversation_id: convId,
-      farmer_id: req.user!.id,
-      role: 'assistant',
-      content: JSON.stringify(finalResponse) // Storing as JSON string to keep backward schema compatibility if it's text
-    }).select().single();
-
-    if (aiErr) throw aiErr;
-
-    res.json({ success: true, data: { message: toCamel(aiMsg), conversationId: convId, sources } });
-  } catch (err) { next(err); }
-});
-
-// POST /api/v1/ai/voice
-router.post('/voice', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    // In a real app, req.file would contain the audio blob.
-    // For this simulation, we'll assume the frontend sends a mock text transcript if no audio is processed.
-    const { transcript, language = 'en' } = req.body;
-    
-    // Simulate STT and LLM delay
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    let aiResponse = "Voice command received. I am analyzing your request.";
-    const transcriptLower = (transcript || '').toLowerCase();
-    
-    if (transcriptLower.includes('weather')) {
-      aiResponse = "The weather is currently clear, but light showers are expected tomorrow evening.";
-    } else if (transcriptLower.includes('price')) {
-      aiResponse = "The current market price for tomatoes is 25 rupees per kilogram in your local mandi.";
-    }
-
-    // In a real app, we would generate a TTS audio blob here and upload to Supabase Storage.
-    // We'll simulate by returning text that the frontend browser TTS can read out loud.
-    
-    res.json({ success: true, data: { transcript: transcript || "Detected voice", response: aiResponse } });
-  } catch (err) { next(err); }
-});
-
-// POST /api/v1/ai/disease-detect
-router.post('/disease-detect', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const { imageBase64, imageUrl, cropName } = req.body;
-
-    // Simulate Vision AI processing delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
-
-    const detectedCrop = cropName || 'Tomato';
-    const mockReport = {
-      disease: 'Early Blight (Alternaria solani)',
-      confidence: 92,
-      severity: 'medium',
-      treatment: 'Apply copper-based fungicide or chlorothalonil. Remove severely affected lower leaves to prevent spores from spreading. Ensure proper spacing between plants for adequate airflow.',
-      prevention: 'Avoid overhead irrigation. Practice 2-3 year crop rotation with non-solanaceous crops. Mulch around base to prevent soil splash.'
-    };
-
-    try {
-      await supabase.from('ai_image_reports').insert({
-        farmer_id: req.user!.id,
-        image_url: imageUrl || 'disease_scan.jpg',
-        detected_crop: detectedCrop,
-        health_status: 'infected',
-        diseases: [{ name: mockReport.disease, confidence: mockReport.confidence }],
-        treatment_suggestions: [mockReport.treatment],
-        confidence_score: mockReport.confidence
-      });
-    } catch (dbErr) {
-      // Non-blocking if table is not migrated
-    }
-
-    res.json({
-      success: true,
-      data: {
-        result: mockReport
-      }
-    });
-  } catch (err) { next(err); }
-});
-
-// GET /api/v1/ai/image-reports
-router.get('/image-reports', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const { data: reports, error } = await supabase
-      .from('ai_image_reports')
-      .select('*')
-      .eq('farmer_id', req.user!.id)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    res.json({ success: true, data: { reports: toCamel(reports) } });
-  } catch (err) {
-    // Return empty list if error
-    res.json({ success: true, data: { reports: [] } });
-  }
-});
-
-// POST /api/v1/ai/image
-router.post('/image', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const { imageUrl, cropType } = req.body;
-    
-    // Simulate Vision AI processing delay
-    await new Promise(resolve => setTimeout(resolve, 2500));
-
-    // Simulated Disease Analysis
-    const mockReport = {
-      detected_crop: cropType || 'Tomato',
-      health_status: 'infected',
-      diseases: [
-        { name: 'Early Blight (Alternaria solani)', confidence: 92 },
-        { name: 'Nitrogen Deficiency', confidence: 45 }
-      ],
-      treatment_suggestions: [
-        'Apply copper-based fungicide immediately.',
-        'Ensure proper spacing between plants for air circulation.',
-        'Avoid overhead watering to keep leaves dry.'
-      ],
-      confidence_score: 92
-    };
-
-    const { data: report, error } = await supabase.from('ai_image_reports').insert({
-      farmer_id: req.user!.id,
-      image_url: imageUrl || 'simulated_image.jpg',
-      ...mockReport
-    }).select().single();
-
-    if (error) throw error;
-
-    res.json({ success: true, data: { report: toCamel(report) } });
-  } catch (err) { next(err); }
-});
-
-// POST /api/v1/ai/document/ocr
-router.post('/document/ocr', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const { documentUrl, documentType = 'aadhaar' } = req.body;
-    
-    // Simulate OCR delay
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    const mockData = documentType === 'aadhaar' 
-      ? { name: 'Ramesh Kumar', uid: 'XXXX-XXXX-1234', dob: '1985-04-12', address: 'Vill: Rampur, Dist: Solapur' }
-      : { farmArea: '5.2 Acres', soilType: 'Black Cotton', surveyNo: '124/B' };
-
-    const { data: ocrDoc, error } = await supabase.from('ai_ocr_documents').insert({
-      farmer_id: req.user!.id,
-      document_url: documentUrl || 'simulated_doc.pdf',
-      document_type: documentType,
-      extracted_data: mockData,
-      confidence_score: 95.5
-    }).select().single();
-
-    if (error) throw error;
-    res.json({ success: true, data: { document: toCamel(ocrDoc) } });
-  } catch (err) { next(err); }
-});
-
-// POST /api/v1/ai/knowledge/ingest
-router.post('/knowledge/ingest', async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-  try {
-    // Basic admin check - assuming role comes from auth
-    if (req.user?.role !== 'ADMIN') {
-      res.status(403).json({ success: false, message: 'Forbidden: Admins only' });
-      return;
-    }
-
-    const { title, description, source, sourceUrl, category, language, content } = req.body;
-    
-    if (!title || !content) {
-      res.status(400).json({ success: false, message: 'Title and content are required' });
-      return;
-    }
-
-    const docId = await ingestDocument({
-      title,
-      description,
-      source,
-      source_url: sourceUrl,
-      category,
-      language: language || 'en',
-      content
-    });
-
-    res.json({ success: true, data: { documentId: docId } });
-  } catch (err) { next(err); }
-});
-
-// GET /api/v1/ai/knowledge/search
-router.get('/knowledge/search', async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-  try {
-    const { q } = req.query;
-    
-    if (!q || typeof q !== 'string') {
-      res.status(400).json({ success: false, message: 'Query parameter "q" is required' });
-      return;
-    }
-
-    const results = await searchKnowledge(q, 0.7, 5);
-
-    res.json({ success: true, data: { results, query: q } });
-  } catch (err) { next(err); }
-});
-
-// POST /api/v1/ai/translate
-router.post('/translate', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const { text, targetLang } = req.body;
-    
-    // Simulate Translation Delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    // Mock translation mapping
-    const mockTranslations: Record<string, string> = {
-      'hi': 'नमस्ते, मैं आपकी कैसे मदद कर सकता हूँ?',
-      'te': 'నమస్కారం, నేను మీకు ఎలా సహాయపడగలను?',
-      'mr': 'नमस्कार, मी तुम्हाला कशी मदत करू शकतो?'
-    };
-
-    const translatedText = mockTranslations[targetLang] || `[Translated to ${targetLang}]: ${text}`;
-    
-    res.json({ success: true, data: { original: text, translated: translatedText, targetLang } });
-  } catch (err) { next(err); }
-});
-
-// GET /api/v1/ai/analytics
-router.get('/analytics', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    // Return mock aggregated AI analytics for the dashboard
-    const analytics = {
-      totalConversations: 12450,
-      activeUsers: 3200,
-      voiceRequests: 4500,
-      imageDiagnoses: 1800,
-      averageResponseTimeMs: 1200,
-      avgAccuracyScore: 94.5
-    };
-    
-    res.json({ success: true, data: analytics });
-  } catch (err) { next(err); }
-});
-
+router.post('/knowledge/ingest', async (req: AuthRequest,res: Response,next: NextFunction)=>{ try { if(!['ADMIN','SUPER_ADMIN'].includes((req.user?.role||'').toUpperCase())) throw createApiError(403,'Admins only'); const title=requireText(req.body.title,'title'); const content=requireText(req.body.content,'content'); const id=await ingestDocument({title,description:req.body.description,source:req.body.source,source_url:req.body.sourceUrl,category:req.body.category,language:req.body.language||'en',content}); res.json({success:true,data:{documentId:id}}); } catch(e){next(e);} });
+router.get('/knowledge/search', async (req: AuthRequest,res: Response,next: NextFunction)=>{ try { const q=typeof req.query.q==='string'?req.query.q.trim():''; if(!q) throw createApiError(400,'Query parameter "q" is required'); res.json({success:true,data:{results:await searchKnowledge(q,0.7,5),query:q}}); } catch(e){next(e);} });
+router.post('/translate', async (req: AuthRequest,res: Response,next: NextFunction)=>{ try { const text=requireText(req.body.text,'text'); const targetLang=requireText(req.body.targetLang,'targetLang'); const sourceLang=typeof req.body.sourceLang==='string'?req.body.sourceLang:'auto'; res.json({success:true,data:await translateText(text,targetLang,sourceLang)}); } catch(e){next(e);} });
+router.get('/analytics', async (req: AuthRequest,res: Response,next: NextFunction)=>{ try { const {data,error}=await supabase.from('ai_analytics').select('*').order('date',{ascending:false}).limit(30); if(error) throw error; const rows=data||[]; const sum=(k:keyof typeof rows[number])=>rows.reduce((n,r)=>n+Number(r[k]||0),0); res.json({success:true,data:{totalConversations:sum('total_conversations'),activeUsers:Math.max(0,...rows.map(r=>Number(r.active_users||0))),voiceRequests:sum('voice_requests'),imageDiagnoses:sum('image_diagnoses'),ocrRequests:sum('ocr_requests'),averageResponseTimeMs:rows.length?Math.round(rows.reduce((n,r)=>n+Number(r.average_response_time_ms||0),0)/rows.length):0,avgAccuracyScore:rows.length?Number((rows.reduce((n,r)=>n+Number(r.avg_accuracy_score||0),0)/rows.length).toFixed(2)):null}}); } catch(e){next(e);} });
 export default router;

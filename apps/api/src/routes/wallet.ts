@@ -6,98 +6,17 @@ import { supabase } from '../config/supabase';
 const router = Router();
 router.use(authenticate);
 
-const mapKeys = (obj: any): any => {
-  if (Array.isArray(obj)) return obj.map(mapKeys);
-  if (obj !== null && typeof obj === 'object' && !(obj instanceof Date)) {
-    return Object.keys(obj).reduce((acc, key) => {
-      const camelKey = key.replace(/_([a-z])/g, (g) => g[1].toUpperCase());
-      acc[camelKey] = mapKeys(obj[key]);
-      return acc;
-    }, {} as any);
+const getWallet = async (userId: string) => {
+  const { data, error } = await supabase.from('wallets').upsert({ user_id: userId }, { onConflict: 'user_id', ignoreDuplicates: true }).select('*').single();
+  if (error) {
+    const fallback = await supabase.from('wallets').select('*').eq('user_id', userId).single();
+    if (fallback.error) throw fallback.error;
+    return fallback.data;
   }
-  return obj;
+  return data;
 };
 
-// GET /api/wallet - Get Wallet Summary
-router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    // In a real implementation, we'd fetch from a `wallets` table. 
-    // Here we'll mock the response based on the user's role to fulfill the Volume 3.10 requirements visually.
-    
-    const mockWalletData = {
-      availableBalance: req.user!.role === 'buyer' ? 120500 : 42560,
-      pendingBalance: req.user!.role === 'buyer' ? 0 : 8250,
-      lifetimeEarnings: req.user!.role === 'buyer' ? 0 : 185400,
-      totalSpent: req.user!.role === 'buyer' ? 345000 : 15000,
-      cashback: 1250,
-      rewardPoints: 450,
-      escrowLocked: req.user!.role === 'buyer' ? 45000 : 0
-    };
-
-    res.json({ success: true, data: mockWalletData });
-  } catch (err) { next(err); }
-});
-
-// GET /api/wallet/transactions - Get Transaction History
-router.get('/transactions', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    // Mock transactions
-    const mockTransactions = [
-      {
-        id: 'TXN-982374-1',
-        amount: 25000,
-        type: req.user!.role === 'buyer' ? 'DEBIT' : 'CREDIT',
-        category: req.user!.role === 'buyer' ? 'Crop Purchase' : 'Crop Sale',
-        status: 'COMPLETED',
-        date: new Date(Date.now() - 1000 * 60 * 60 * 2), // 2 hours ago
-        method: 'UPI',
-        reference: 'UPI123456789'
-      },
-      {
-        id: 'TXN-982374-2',
-        amount: 8250,
-        type: 'CREDIT',
-        category: 'Escrow Settlement',
-        status: 'PENDING',
-        date: new Date(Date.now() - 1000 * 60 * 60 * 24), // 1 day ago
-        method: 'Wallet',
-        reference: 'ESCROW-99'
-      },
-      {
-        id: 'TXN-982374-3',
-        amount: req.user!.role === 'buyer' ? 50000 : 10000,
-        type: 'DEBIT',
-        category: 'Withdrawal',
-        status: 'COMPLETED',
-        date: new Date(Date.now() - 1000 * 60 * 60 * 48),
-        method: 'Bank Transfer',
-        reference: 'NEFT99887766'
-      },
-      {
-        id: 'TXN-982374-4',
-        amount: 150,
-        type: 'CREDIT',
-        category: 'Cashback',
-        status: 'COMPLETED',
-        date: new Date(Date.now() - 1000 * 60 * 60 * 72),
-        method: 'Wallet',
-        reference: 'CB-102'
-      }
-    ];
-
-    res.json({ success: true, data: { transactions: mockTransactions } });
-  } catch (err) { next(err); }
-});
-
-// POST /api/wallet/withdraw - Withdraw Money
-router.post('/withdraw', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const { amount, bankId } = req.body;
-    if (!amount) throw createApiError(400, 'Amount is required');
-    
-    // In reality, this would deduct from wallet and create a withdraw_request
-    res.json({ success: true, message: 'Withdrawal request initiated successfully. Funds will reflect in 2-3 business days.' });
-  } catch (err) { next(err); }
-});
-
+router.get('/', async (req: AuthRequest,res: Response,next: NextFunction)=>{ try { const wallet=await getWallet(req.user!.id); res.json({success:true,data:wallet}); } catch(e){next(e);} });
+router.get('/transactions', async (req: AuthRequest,res: Response,next: NextFunction)=>{ try { const wallet=await getWallet(req.user!.id); const {data,error}=await supabase.from('wallet_transactions').select('*').eq('wallet_id',wallet.id).order('created_at',{ascending:false}).limit(100); if(error) throw error; res.json({success:true,data:{transactions:data||[]}}); } catch(e){next(e);} });
+router.post('/withdraw', async (req: AuthRequest,res: Response,next: NextFunction)=>{ try { const amount=Number(req.body.amount); const bankId=typeof req.body.bankId==='string'?req.body.bankId.trim():''; if(!Number.isFinite(amount)||amount<=0) throw createApiError(400,'A valid positive amount is required'); if(!bankId) throw createApiError(400,'bankId is required'); const wallet=await getWallet(req.user!.id); if(Number(wallet.available_balance)<amount) throw createApiError(400,'Insufficient wallet balance'); const {data,error}=await supabase.from('withdrawal_requests').insert({wallet_id:wallet.id,amount,bank_id:bankId}).select().single(); if(error) throw error; res.status(201).json({success:true,data:{withdrawal:data}}); } catch(e){next(e);} });
 export default router;

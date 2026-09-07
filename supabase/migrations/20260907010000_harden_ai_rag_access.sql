@@ -1,38 +1,20 @@
-CREATE EXTENSION IF NOT EXISTS vector;
-
-CREATE TABLE IF NOT EXISTS ai_documents (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  title text NOT NULL,
-  description text,
-  source text,
-  source_url text,
-  category text,
-  language varchar(10) DEFAULT 'en',
-  content text NOT NULL,
-  metadata jsonb DEFAULT '{}'::jsonb,
-  status varchar(20) DEFAULT 'processing',
-  created_at timestamptz DEFAULT now(),
-  updated_at timestamptz DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS ai_document_chunks (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  document_id uuid REFERENCES ai_documents(id) ON DELETE CASCADE,
-  chunk_index int NOT NULL,
-  chunk_text text NOT NULL,
-  language varchar(10) DEFAULT 'en',
-  metadata jsonb DEFAULT '{}'::jsonb,
-  embedding vector(768),
-  created_at timestamptz DEFAULT now()
-);
+-- Forward migration for databases where 20260816000000_ai_rag_tables.sql
+-- was already applied before the RAG security hardening.
 
 ALTER TABLE ai_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_document_chunks ENABLE ROW LEVEL SECURITY;
 
--- Knowledge-base content is accessed through the backend RAG service, which
--- uses the service-role client and applies application-level authorization.
--- There is intentionally no public/anon SELECT policy on these tables.
+-- Remove the legacy public-read policies created by the original migration.
+DROP POLICY IF EXISTS "Public read indexed ai_documents" ON ai_documents;
+DROP POLICY IF EXISTS "Public read indexed ai_document_chunks" ON ai_document_chunks;
 
+-- The backend uses the Supabase service-role client and performs application-level
+-- authorization. Do not expose the knowledge tables through direct public access.
+REVOKE ALL ON TABLE ai_documents FROM PUBLIC;
+REVOKE ALL ON TABLE ai_document_chunks FROM PUBLIC;
+
+-- Keep vector retrieval behind the backend service-role RPC. SECURITY DEFINER is
+-- paired with a fixed search_path and an explicit service_role-only EXECUTE grant.
 CREATE OR REPLACE FUNCTION match_ai_document_chunks(
   query_embedding vector(768),
   match_threshold float,
@@ -75,3 +57,14 @@ $$;
 
 REVOKE ALL ON FUNCTION match_ai_document_chunks(vector(768), float, int) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION match_ai_document_chunks(vector(768), float, int) TO service_role;
+
+-- Ensure production databases have the same vector index expected by the RAG layer.
+CREATE INDEX IF NOT EXISTS ai_document_chunks_embedding_hnsw_idx
+  ON ai_document_chunks
+  USING hnsw (embedding vector_cosine_ops);
+
+CREATE INDEX IF NOT EXISTS ai_document_chunks_document_id_idx
+  ON ai_document_chunks (document_id);
+
+CREATE INDEX IF NOT EXISTS ai_documents_status_idx
+  ON ai_documents (status);
