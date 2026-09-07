@@ -21,7 +21,7 @@ const setAuthCookies = (res: Response, accessToken?: string, refreshToken?: stri
 const clearAuthCookies = (res: Response) => { res.clearCookie('token', { path: '/' }); res.clearCookie('refreshToken', { path: '/api/v1/auth' }); };
 
 export const checkUser = async (req: Request, res: Response, next: NextFunction) => { try { const { email, phone } = req.body; res.json(await authService.checkUserAvailability(email, phone)); } catch (error) { next(error); } };
-export const saveDraft = async (req: Request, res: Response, next: NextFunction) => { try { await authService.saveRegistrationDraft(req.body); res.json(formatSuccess('Draft saved successfully')); } catch (error) { next(error); } };
+export const saveDraft = async (req: Request, res: Response, next: NextFunction) => { try { const draft = await authService.saveRegistrationDraft(req.body); res.status(201).json(formatSuccess('Draft saved successfully', { draft })); } catch (error) { next(error); } };
 export const register = async (req: Request, res: Response, next: NextFunction) => { try { const result = await authService.registerUser(registerSchema.parse(req.body), { ipAddress: req.ip, userAgent: req.headers['user-agent'] }); res.status(201).json(formatSuccess('Registration successful', result)); } catch (error: any) { next(error?.name === 'ZodError' ? new ValidationError('Invalid input data', error.errors) : error); } };
 
 export const login = async (req: Request, res: Response, next: NextFunction) => {
